@@ -1,0 +1,28 @@
+# Rust
+server/target/
+
+# Node
+desktop/node_modules/
+desktop/dist/
+
+# Tauri
+desktop/src-tauri/target/
+desktop/src-tauri/icons/
+
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/*.iml
+
+# macOS
+.DS_Store
+*.dmg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,23 @@
+#!/bin/sh
+# Minimal gradle wrapper
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+export ANDROID_HOME="$HOME/android-sdk"
+GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
+GRADLE_VERSION="8.9"
+GRADLE_HOME="$GRADLE_USER_HOME/wrapper/dists/gradle-${GRADLE_VERSION}-bin"
+GRADLE_ZIP="$GRADLE_HOME/gradle-${GRADLE_VERSION}-bin.zip"
+GRADLE_DIR="$GRADLE_HOME/gradle-${GRADLE_VERSION}"
+
+if [ ! -f "$GRADLE_DIR/bin/gradle" ]; then
+    mkdir -p "$GRADLE_HOME"
+    if [ ! -f "$GRADLE_ZIP" ]; then
+        echo "Downloading Gradle $GRADLE_VERSION..."
+        curl -L --noproxy '*' -o "$GRADLE_ZIP" "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" || {
+            echo "Trying mirror..."
+            curl -L -o "$GRADLE_ZIP" "https://downloads.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+        }
+    fi
+    echo "Extracting Gradle..."
+    unzip -qo "$GRADLE_ZIP" -d "$GRADLE_HOME"
+fi
+exec "$GRADLE_DIR/bin/gradle" "$@"
