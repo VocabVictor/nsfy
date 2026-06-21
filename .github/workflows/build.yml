@@ -1,0 +1,122 @@
+name: Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+
+  # ── Rust server ──────────────────────────────
+
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+        working-directory: server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsfyd-linux-x86_64
+          path: server/target/release/nsfyd
+
+  # ── Desktop (macOS arm64) ────────────────────
+
+  desktop-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: desktop
+      - run: cargo tauri build
+        working-directory: desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsfy-desktop-macos
+          path: desktop/src-tauri/target/release/bundle/
+
+  # ── Desktop (Linux) ──────────────────────────
+
+  desktop-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: desktop
+      - run: cargo tauri build
+        working-directory: desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsfy-desktop-linux
+          path: desktop/src-tauri/target/release/bundle/
+
+  # ── Desktop (Windows) ────────────────────────
+
+  desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: desktop
+      - run: cargo tauri build
+        working-directory: desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsfy-desktop-windows
+          path: desktop/src-tauri/target/release/bundle/
+
+  # ── Android ──────────────────────────────────
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew assembleRelease
+        working-directory: android
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nsfy-android
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+
+  # ── Release ──────────────────────────────────
+
+  release:
+    needs: [server, desktop-mac, desktop-linux, desktop-windows, android]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - run: |
+          cd artifacts
+          for d in */; do
+            (cd "$d" && zip -r "../${d%/}.zip" .)
+            rm -rf "$d"
+          done
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true
