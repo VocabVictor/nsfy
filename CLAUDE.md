@@ -2,7 +2,7 @@
 
 ## Git rules — read first
 
-- Author: `nsfy <VocabVictor@users.noreply.github.com>` on every commit
+- Author: `VocabVictor <VocabVictor@users.noreply.github.com>` on every commit
 - No `Co-Authored-By` lines. No `Claude`, no `noreply@anthropic.com`. Ever.
 - Commit messages in English, imperative mood, lowercased first word
 - Push only when the user says so, or after CI config changes that need triggering

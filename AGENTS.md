@@ -4,8 +4,8 @@ These apply to every sub-agent spawned in this repo. Break them, and the commit 
 
 ## Git
 
-- Author is always `nsfy <VocabVictor@users.noreply.github.com>`. Set it before committing.
-- `git commit --author="nsfy <VocabVictor@users.noreply.github.com>"`
+- Author is always `VocabVictor <VocabVictor@users.noreply.github.com>`. Set it before committing.
+- `git commit --author="VocabVictor <VocabVictor@users.noreply.github.com>"`
 - Never add `Co-Authored-By`. Not for Claude, not for Copilot, not for anyone.
 - Amend, don't stack fix commits. One logical change, one commit.
 - Force push is fine on `main` — this is a solo repo.
