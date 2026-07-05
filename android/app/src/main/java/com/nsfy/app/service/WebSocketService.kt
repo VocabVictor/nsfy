@@ -139,14 +139,17 @@ class WebSocketService : Service() {
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                // Reconnect on the coroutine scope, not this thread — this
+                // callback runs on OkHttp's own dispatcher pool, and a
+                // blocking Thread.sleep here ties up one of its worker
+                // threads for the whole delay on every single reconnect.
                 scope.launch {
                     repository.setTopicConnected(serverUrl, topicName, false)
                     updateNotification()
-                }
-                // Reconnect after delay
-                Thread.sleep(5000)
-                if (connections.containsKey(key)) {
-                    connectWs(serverUrl, topicName)
+                    delay(5000)
+                    if (connections.containsKey(key)) {
+                        connectWs(serverUrl, topicName)
+                    }
                 }
             }
 
@@ -155,10 +158,10 @@ class WebSocketService : Service() {
                 scope.launch {
                     repository.setTopicConnected(serverUrl, topicName, false)
                     updateNotification()
-                }
-                Thread.sleep(10000)
-                if (connections.containsKey(key)) {
-                    connectWs(serverUrl, topicName)
+                    delay(10000)
+                    if (connections.containsKey(key)) {
+                        connectWs(serverUrl, topicName)
+                    }
                 }
             }
         })
