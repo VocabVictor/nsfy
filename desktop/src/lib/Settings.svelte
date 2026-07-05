@@ -4,6 +4,24 @@
   let newUrl = $state('');
   let newName = $state('');
   let showAdd = $state(false);
+
+  function focusOnMount(el: HTMLElement) {
+    el.focus();
+  }
+
+  function submitAdd() {
+    if (!newUrl || !newName) return;
+    addServer(newUrl, newName);
+    newUrl = ''; newName = ''; showAdd = false;
+  }
+
+  function confirmRemove(url: string, name: string) {
+    const count = $topics.filter(t => t.server === url).length;
+    const extra = count > 0 ? ` and its ${count} subscribed topic(s)` : '';
+    if (confirm(`Remove server "${name}"${extra}? This can't be undone.`)) {
+      removeServer(url);
+    }
+  }
 </script>
 
 <div class="page">
@@ -13,13 +31,13 @@
   </header>
 
   {#if showAdd}
-    <div class="add-form">
-      <input type="text" placeholder="Server name (e.g. Home VPS)" bind:value={newName} />
+    <div class="add-form" onkeydown={(e) => {
+      if (e.key === 'Escape') showAdd = false;
+      if (e.key === 'Enter') submitAdd();
+    }}>
+      <input type="text" placeholder="Server name (e.g. Home VPS)" bind:value={newName} use:focusOnMount />
       <input type="text" placeholder="http://host:port" bind:value={newUrl} />
-      <button class="btn-primary" disabled={!newUrl || !newName} onclick={() => {
-        addServer(newUrl, newName);
-        newUrl = ''; newName = ''; showAdd = false;
-      }}>Add</button>
+      <button class="btn-primary" disabled={!newUrl || !newName} onclick={submitAdd}>Add</button>
     </div>
   {/if}
 
@@ -34,7 +52,9 @@
             {$topics.filter(t => t.server === s.url).length} topic(s) subscribed
           </div>
         </div>
-        <button class="del-btn" onclick={() => removeServer(s.url)}>✕</button>
+        <button class="del-btn" onclick={() => confirmRemove(s.url, s.name)} aria-label="Remove server">
+          <svg viewBox="0 0 16 16" fill="none" width="13" height="13"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
       </div>
     {/each}
   </div>
@@ -53,48 +73,49 @@
     display: flex; flex-direction: column; height: 100%;
     padding: 24px; max-width: 600px; margin: 0 auto; width: 100%;
   }
-  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-  header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.2px; color: var(--text-1); }
   .add-btn {
-    width: 36px; height: 36px; border-radius: 10px;
-    border: 1px solid #2a2a2a; background: #1a1a1a; color: #888;
-    font-size: 20px; cursor: pointer;
+    width: 32px; height: 32px; border-radius: var(--r-md);
+    border: 1px solid var(--border); background: var(--bg-2); color: var(--text-2);
+    font-size: 18px; cursor: pointer; transition: all 0.12s;
   }
-  .add-btn:hover { background: #252525; color: #a5b4fc; }
+  .add-btn:hover { background: var(--bg-3); color: var(--text-1); border-color: var(--border-strong); }
   .add-form {
     display: flex; flex-direction: column; gap: 8px; padding: 12px;
-    background: #161616; border-radius: 12px; margin-bottom: 20px;
+    background: var(--bg-2); border-radius: var(--r-lg); border: 1px solid var(--border); margin-bottom: 20px;
   }
   .add-form input {
-    background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 8px;
-    padding: 8px 12px; color: #e5e5e5; font-size: 13px;
+    background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--r-sm);
+    padding: 8px 12px; color: var(--text-1); font-size: 13px;
     font-family: inherit; outline: none;
   }
-  .add-form input:focus { border-color: #6366f1; }
+  .add-form input:focus { border-color: var(--accent); }
   .btn-primary {
-    padding: 8px 16px; border: none; border-radius: 8px; background: #6366f1;
-    color: white; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+    padding: 8px 16px; border: none; border-radius: var(--r-sm); background: var(--accent);
+    color: var(--accent-ink); font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
   }
-  .btn-primary:disabled { background: #2a2a3a; color: #555; cursor: default; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled { background: var(--bg-3); color: var(--text-4); cursor: default; }
   .section { margin-bottom: 24px; }
   .section h2 {
-    font-size: 11px; font-weight: 600; color: #666;
+    font-size: 11px; font-weight: 600; color: var(--text-3);
     text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
   }
   .server-item {
     display: flex; align-items: center; gap: 12px; padding: 12px 16px;
-    background: #111111; border-radius: 10px; border: 1px solid #1a1a1a; margin-bottom: 4px;
+    background: var(--bg-2); border-radius: var(--r-lg); border: 1px solid var(--border); margin-bottom: 4px;
   }
   .server-info { flex: 1; }
-  .server-name { font-weight: 600; font-size: 14px; }
-  .server-url { font-size: 12px; color: #666; font-family: monospace; }
-  .server-topics { font-size: 11px; color: #555; margin-top: 2px; }
+  .server-name { font-weight: 600; font-size: 14px; color: var(--text-1); }
+  .server-url { font-size: 12px; color: var(--text-3); font-family: monospace; }
+  .server-topics { font-size: 11px; color: var(--text-4); margin-top: 2px; }
   .del-btn {
-    width: 28px; height: 28px; border-radius: 6px;
-    border: 1px solid #2a2a2a; background: transparent; color: #555;
-    font-size: 12px; cursor: pointer;
+    width: 26px; height: 26px; border-radius: var(--r-sm);
+    border: 1px solid var(--border); background: transparent; color: var(--text-3);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.12s;
   }
-  .del-btn:hover { background: #2a0a0a; color: #ef4444; border-color: #4a1515; }
-  .about p { font-size: 13px; color: #888; }
-  .version { margin-top: 4px; color: #555; font-size: 12px; }
+  .del-btn:hover { background: var(--danger-bg); color: var(--danger); border-color: rgba(239,68,68,0.35); }
+  .about p { font-size: 13px; color: var(--text-2); }
+  .version { margin-top: 4px; color: var(--text-4); font-size: 12px; }
 </style>

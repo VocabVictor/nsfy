@@ -35,7 +35,7 @@
         body,
       });
       if (res.ok) {
-        status = 'sent'; statusMsg = '✓ Published';
+        status = 'sent'; statusMsg = 'Published';
         message = ''; title = ''; tags = '';
         setTimeout(() => status = 'idle', 2000);
       } else {
@@ -103,36 +103,36 @@
     display: flex; flex-direction: column; height: 100%;
     padding: 24px; max-width: 600px; margin: 0 auto; width: 100%;
   }
-  header { margin-bottom: 24px; }
-  header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+  header { margin-bottom: 20px; }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.2px; color: var(--text-1); }
   .form { display: flex; flex-direction: column; gap: 16px; }
   .row { display: flex; flex-direction: column; gap: 6px; }
-  label { font-size: 12px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
-  .opt { font-weight: 400; color: #555; text-transform: none; }
+  label { font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; }
+  .opt { font-weight: 400; color: var(--text-4); text-transform: none; }
   select, input, textarea {
-    background: #111111; border: 1px solid #222; border-radius: 10px;
-    padding: 10px 14px; color: #e5e5e5; font-size: 14px;
-    font-family: inherit; outline: none; transition: border-color 0.15s; resize: vertical;
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-md);
+    padding: 10px 14px; color: var(--text-1); font-size: 14px;
+    font-family: inherit; outline: none; transition: border-color 0.12s; resize: vertical;
   }
-  select:focus, input:focus, textarea:focus { border-color: #6366f1; }
+  select:focus, input:focus, textarea:focus { border-color: var(--accent); }
   .priority-row { display: flex; gap: 6px; }
   .pri-btn {
-    width: 40px; height: 36px; border-radius: 8px;
-    border: 1px solid #2a2a2a; background: #111111; color: #888;
-    font-size: 14px; font-weight: 600; cursor: pointer;
-    transition: all 0.15s; font-family: inherit;
+    width: 38px; height: 34px; border-radius: var(--r-sm);
+    border: 1px solid var(--border); background: var(--bg-2); color: var(--text-3);
+    font-size: 13px; font-weight: 600; cursor: pointer;
+    transition: all 0.12s; font-family: inherit;
   }
-  .pri-btn:hover { background: #1a1a1a; color: #ccc; }
-  .pri-btn.active { background: #6366f1; color: white; border-color: #6366f1; }
+  .pri-btn:hover { background: var(--bg-3); color: var(--text-2); }
+  .pri-btn.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   .pub-btn {
-    padding: 12px 24px; border: none; border-radius: 10px;
-    background: #6366f1; color: white; font-size: 15px;
-    font-weight: 600; cursor: pointer; transition: background 0.15s;
+    padding: 11px 24px; border: none; border-radius: var(--r-md);
+    background: var(--accent); color: var(--accent-ink); font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: background 0.12s;
     font-family: inherit; margin-top: 8px;
   }
-  .pub-btn:hover { background: #5558e6; }
-  .pub-btn:disabled { background: #2a2a3a; color: #555; cursor: default; }
-  .status-msg { font-size: 13px; padding: 8px 12px; border-radius: 8px; }
-  .status-msg.success { color: #22c55e; background: #0a2a0a; }
-  .status-msg.error { color: #ef4444; background: #2a0a0a; }
+  .pub-btn:hover { background: var(--accent-hover); }
+  .pub-btn:disabled { background: var(--bg-3); color: var(--text-4); cursor: default; }
+  .status-msg { font-size: 13px; padding: 8px 12px; border-radius: var(--r-sm); }
+  .status-msg.success { color: var(--success); background: var(--success-bg); }
+  .status-msg.error { color: var(--danger); background: var(--danger-bg); }
 </style>
