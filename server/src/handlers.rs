@@ -1,6 +1,7 @@
 use crate::message::{Message, PublishRequest};
 use crate::pubsub::PubSub;
 use crate::security::{client_ip, ConnLimiter, ConnPermit, RateLimiter};
+use crate::store::Persistence;
 use axum::extract::{ws, ConnectInfo, Path, Query, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -21,9 +22,13 @@ pub struct AppState {
     pub auth_token: Option<String>,
     pub rate_limiter: RateLimiter<IpAddr>,
     pub topic_rate_limiter: RateLimiter<String>,
+    pub bandwidth_limiter: RateLimiter<IpAddr>,
+    pub topic_creation_limiter: RateLimiter<IpAddr>,
     pub conn_limiter: ConnLimiter,
     pub max_msg_size: usize,
     pub trust_proxy: bool,
+    pub persistence: Persistence,
+    pub db_keep_per_topic: usize,
 }
 
 const MAX_TOPIC_LEN: usize = 128;
@@ -70,6 +75,8 @@ pub async fn index(State(state): State<Arc<AppState>>) -> Json<crate::pubsub::Pu
 pub async fn publish(
     State(state): State<Arc<AppState>>,
     Path(topic): Path<String>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     body: Result<Json<PublishRequest>, axum::extract::rejection::JsonRejection>,
 ) -> Result<impl IntoResponse, AppError> {
     if !is_valid_topic(&topic) {
@@ -77,6 +84,26 @@ pub async fn publish(
     }
     let req = body.map_err(|e| AppError::bad_request(e.to_string()))?;
     validate_publish(&req, state.max_msg_size).map_err(AppError::bad_request)?;
+
+    let ip = client_ip(&headers, addr, state.trust_proxy);
+
+    // A brand-new topic draws from a separate, tighter per-IP budget than
+    // publishes to topics that already exist — caps how fast one IP can
+    // spend the shared `max_topics` headroom, on top of the hard ceiling.
+    if !state.pubsub.topic_exists(&topic) && !state.topic_creation_limiter.check(ip) {
+        return Err(AppError::too_many_requests(
+            "topic creation rate limit exceeded",
+        ));
+    }
+
+    // Bytes, not just requests: a handful of maximum-size messages would
+    // otherwise slip under a request-count-only limit.
+    if !state
+        .bandwidth_limiter
+        .check_n(ip, req.message.len() as f64)
+    {
+        return Err(AppError::too_many_requests("bandwidth limit exceeded"));
+    }
 
     // Aggregate per-topic budget, on top of the per-IP one already applied
     // by the global middleware — stops a distributed flood (many IPs, one
@@ -89,6 +116,9 @@ pub async fn publish(
 
     let msg: Message = req.0.into();
     let msg_json = serde_json::to_string(&msg).unwrap();
+    state
+        .persistence
+        .record(&topic, &msg, state.db_keep_per_topic);
 
     if !state.pubsub.publish(&topic, msg).await {
         return Err(AppError::unavailable("topic table full, try again later"));
@@ -195,12 +225,17 @@ async fn handle_ws(
                     Some(Ok(ws::Message::Text(text))) => {
                         // Client can also publish via WS — same rate limits and
                         // field checks as the HTTP path, since this bypasses it.
+                        // No separate topic-creation check: subscribing already
+                        // created `topic`, so it always exists by this point.
                         if !state.rate_limiter.check(ip) || !state.topic_rate_limiter.check(topic.clone()) {
                             continue;
                         }
                         if let Ok(req) = serde_json::from_str::<PublishRequest>(&text) {
-                            if validate_publish(&req, state.max_msg_size).is_ok() {
+                            if validate_publish(&req, state.max_msg_size).is_ok()
+                                && state.bandwidth_limiter.check_n(ip, req.message.len() as f64)
+                            {
                                 let msg: Message = req.into();
+                                state.persistence.record(&topic, &msg, state.db_keep_per_topic);
                                 state.pubsub.publish(&topic, msg).await;
                             }
                         }

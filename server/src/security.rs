@@ -46,7 +46,10 @@ pub struct RateLimiter<K: Eq + Hash + Clone> {
 }
 
 impl<K: Eq + Hash + Clone> RateLimiter<K> {
-    pub fn new(capacity: u32, refill_per_sec: f64) -> Self {
+    /// `capacity` is `u64` rather than `u32` so this can meter either
+    /// request counts or byte counts (a bandwidth budget can easily exceed
+    /// 4 billion in one burst window).
+    pub fn new(capacity: u64, refill_per_sec: f64) -> Self {
         Self {
             buckets: DashMap::new(),
             capacity: capacity.max(1) as f64,
@@ -56,6 +59,13 @@ impl<K: Eq + Hash + Clone> RateLimiter<K> {
 
     /// Returns true if the request is allowed, false if the key is over budget.
     pub fn check(&self, key: K) -> bool {
+        self.check_n(key, 1.0)
+    }
+
+    /// Same as `check`, but draws `cost` tokens instead of 1 — lets one
+    /// bucket meter something other than request count (e.g. bytes
+    /// published), reusing the same refill/burst machinery.
+    pub fn check_n(&self, key: K, cost: f64) -> bool {
         if self.buckets.get(&key).is_none() && self.buckets.len() >= MAX_TRACKED_KEYS {
             // Fail closed for new keys once the tracking table is full,
             // rather than let memory grow without bound.
@@ -71,15 +81,17 @@ impl<K: Eq + Hash + Clone> RateLimiter<K> {
         // Recover from a poisoned lock rather than panicking forever on
         // every future request from this key — a panic elsewhere while
         // holding this lock must not permanently break its rate limiting.
-        let mut bucket = entry.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut bucket = entry
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
 
         let now = Instant::now();
         let elapsed = now.duration_since(bucket.last).as_secs_f64();
         bucket.last = now;
         bucket.tokens = (bucket.tokens + elapsed * self.refill_per_sec).min(self.capacity);
 
-        if bucket.tokens >= 1.0 {
-            bucket.tokens -= 1.0;
+        if bucket.tokens >= cost {
+            bucket.tokens -= cost;
             true
         } else {
             false
@@ -266,6 +278,22 @@ mod tests {
     }
 
     #[test]
+    fn check_n_meters_bytes_not_just_request_count() {
+        // A byte-budget bucket of 1000, refilling negligibly slowly: two
+        // 400-byte messages fit, a third 400-byte one doesn't even though
+        // only 2 "requests" have happened, and a single request larger than
+        // the whole budget is rejected outright rather than partially spent.
+        let rl: RateLimiter<IpAddr> = RateLimiter::new(1000, 0.0001);
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+        assert!(rl.check_n(ip, 400.0));
+        assert!(rl.check_n(ip, 400.0));
+        assert!(!rl.check_n(ip, 400.0));
+
+        let ip2: IpAddr = "127.0.0.2".parse().unwrap();
+        assert!(!rl.check_n(ip2, 5000.0));
+    }
+
+    #[test]
     fn topic_rate_limiter_keys_by_string() {
         let rl: RateLimiter<String> = RateLimiter::new(1, 0.0001);
         assert!(rl.check("alerts".to_string()));
@@ -310,7 +338,10 @@ mod tests {
 
         let permits: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
         let granted = permits.iter().filter(|p| p.is_some()).count();
-        assert_eq!(granted, max_total as usize, "exactly max_total permits should be granted, no more");
+        assert_eq!(
+            granted, max_total as usize,
+            "exactly max_total permits should be granted, no more"
+        );
 
         // Freeing everything must return the counters to exactly zero, not
         // leave them skewed from the rollback bookkeeping — so the full
@@ -319,7 +350,10 @@ mod tests {
         let ip: IpAddr = "127.0.0.1".parse().unwrap();
         let refill: Vec<_> = (0..max_total).map(|_| limiter.acquire(ip)).collect();
         assert!(refill.iter().all(|p| p.is_some()));
-        assert!(limiter.acquire(ip).is_none(), "budget should be exhausted again, not over-refilled");
+        assert!(
+            limiter.acquire(ip).is_none(),
+            "budget should be exhausted again, not over-refilled"
+        );
     }
 
     #[test]

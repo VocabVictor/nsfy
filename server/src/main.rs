@@ -3,6 +3,7 @@ mod handlers;
 mod message;
 mod pubsub;
 mod security;
+mod store;
 
 use axum::extract::DefaultBodyLimit;
 use axum::{middleware, routing::get, routing::post, Router};
@@ -19,6 +20,7 @@ use config::Config;
 use handlers::AppState;
 use pubsub::PubSub;
 use security::{ConnLimiter, RateLimiter};
+use store::Persistence;
 
 #[tokio::main]
 async fn main() {
@@ -40,14 +42,69 @@ async fn main() {
     let topic_burst = (cfg.topic_rate_limit_per_min / 6).max(10);
     let topic_refill_per_sec = cfg.topic_rate_limit_per_min as f64 / 60.0;
 
+    // Bandwidth burst always fits at least one max-size message, even right
+    // after a fresh bucket is created — otherwise a legitimate first message
+    // larger than capacity/6 would be rejected outright.
+    let bandwidth_burst = (cfg.bandwidth_limit_per_min / 6).max(cfg.max_msg_size as u64);
+    let bandwidth_refill_per_sec = cfg.bandwidth_limit_per_min as f64 / 60.0;
+
+    let topic_creation_burst = (cfg.topic_creation_limit_per_min / 6).max(5);
+    let topic_creation_refill_per_sec = cfg.topic_creation_limit_per_min as f64 / 60.0;
+
+    let pubsub = PubSub::new(cfg.cache_size, cfg.max_topics);
+
+    // Persistence is always compiled in; --db-path (unset by default)
+    // decides whether it's actually used at runtime.
+    let keep = cfg.db_keep_per_topic.unwrap_or(cfg.cache_size);
+    let (persistence, db_keep_per_topic) = match &cfg.db_path {
+        Some(path) => match store::Store::open(path) {
+            Ok(db) => {
+                let db = Arc::new(db);
+                match tokio::task::spawn_blocking({
+                    let db = Arc::clone(&db);
+                    move || db.load_all(keep)
+                })
+                .await
+                {
+                    Ok(Ok(topics)) => {
+                        let topic_count = topics.len();
+                        for (name, messages) in topics {
+                            pubsub.seed(&name, messages).await;
+                        }
+                        info!("loaded {} topic(s) from {}", topic_count, path);
+                    }
+                    Ok(Err(e)) => tracing::error!("failed to load messages from {}: {}", path, e),
+                    Err(e) => tracing::error!("db load task panicked: {}", e),
+                }
+                (Persistence::Sqlite(db), keep)
+            }
+            Err(e) => {
+                tracing::error!(
+                    "failed to open db at {}: {} — running in-memory only",
+                    path,
+                    e
+                );
+                (Persistence::None, keep)
+            }
+        },
+        None => (Persistence::None, keep),
+    };
+
     let state = Arc::new(AppState {
-        pubsub: PubSub::new(cfg.cache_size, cfg.max_topics),
+        pubsub,
         auth_token: cfg.auth_token.clone(),
-        rate_limiter: RateLimiter::new(burst, refill_per_sec),
-        topic_rate_limiter: RateLimiter::new(topic_burst, topic_refill_per_sec),
+        rate_limiter: RateLimiter::new(burst as u64, refill_per_sec),
+        topic_rate_limiter: RateLimiter::new(topic_burst as u64, topic_refill_per_sec),
+        bandwidth_limiter: RateLimiter::new(bandwidth_burst, bandwidth_refill_per_sec),
+        topic_creation_limiter: RateLimiter::new(
+            topic_creation_burst as u64,
+            topic_creation_refill_per_sec,
+        ),
         conn_limiter: ConnLimiter::new(cfg.max_conns_per_ip, cfg.max_conns_total),
         max_msg_size: cfg.max_msg_size,
         trust_proxy: cfg.trust_proxy,
+        persistence,
+        db_keep_per_topic,
     });
 
     if cfg.stats_interval > 0 {
@@ -76,12 +133,19 @@ async fn main() {
                 state_clone
                     .topic_rate_limiter
                     .sweep(Duration::from_secs(600));
+                state_clone
+                    .bandwidth_limiter
+                    .sweep(Duration::from_secs(600));
+                state_clone
+                    .topic_creation_limiter
+                    .sweep(Duration::from_secs(600));
                 state_clone.conn_limiter.sweep();
             }
         });
     }
 
     let body_limit = cfg.max_msg_size.saturating_add(4096);
+    let persistent = !matches!(state.persistence, Persistence::None);
 
     let app = Router::new()
         .route("/", get(handlers::index))
@@ -105,17 +169,21 @@ async fn main() {
     info!("nsfyd listening on {}", cfg.listen);
     info!(
         "cache_size={}, max_msg_size={}, max_topics={}, rate_limit_per_min={}, \
-         topic_rate_limit_per_min={}, max_conns_per_ip={}, max_conns_total={}, \
-         trust_proxy={}, auth={}",
+         topic_rate_limit_per_min={}, bandwidth_limit_per_min={}, \
+         topic_creation_limit_per_min={}, max_conns_per_ip={}, max_conns_total={}, \
+         trust_proxy={}, auth={}, persistent={}",
         cfg.cache_size,
         cfg.max_msg_size,
         cfg.max_topics,
         cfg.rate_limit_per_min,
         cfg.topic_rate_limit_per_min,
+        cfg.bandwidth_limit_per_min,
+        cfg.topic_creation_limit_per_min,
         cfg.max_conns_per_ip,
         cfg.max_conns_total,
         cfg.trust_proxy,
-        cfg.auth_token.is_some()
+        cfg.auth_token.is_some(),
+        persistent,
     );
 
     axum::serve(

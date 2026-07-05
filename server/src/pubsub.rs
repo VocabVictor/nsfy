@@ -62,6 +62,22 @@ impl Topic {
         cache.iter().map(|m| (**m).clone()).collect()
     }
 
+    /// Pre-populate the cache from persisted history at startup, oldest
+    /// message first. No broadcast — there are no live subscribers yet,
+    /// since this runs before the listener starts accepting connections.
+    /// Unused in a build without the `sqlite` feature — the only caller is
+    /// `PubSub::seed`, itself only invoked from feature-gated startup code.
+    #[allow(dead_code)]
+    async fn seed(&self, messages: Vec<Message>) {
+        let mut cache = self.cache.lock().await;
+        for msg in messages {
+            if cache.len() >= self.max_cache {
+                cache.pop_front();
+            }
+            cache.push_back(Arc::new(msg));
+        }
+    }
+
     pub fn subscribe(&self) -> broadcast::Receiver<Arc<Message>> {
         self.subscriber_count.fetch_add(1, Ordering::Relaxed);
         self.tx.subscribe()
@@ -93,6 +109,25 @@ impl PubSub {
             cache_size,
             max_topics,
         }
+    }
+
+    /// Whether `name` already exists — used to tell a first publish/subscribe
+    /// (which creates the topic) apart from one that reuses an existing
+    /// topic, so creation specifically can be rate-limited.
+    pub fn topic_exists(&self, name: &str) -> bool {
+        self.topics.contains_key(name)
+    }
+
+    /// Replay persisted history into a topic's cache at startup, before the
+    /// server accepts any connections. Feature-independent — this knows
+    /// nothing about where `messages` came from, so persistence backends
+    /// stay entirely out of this module. Unused in a build without the
+    /// `sqlite` feature, the only backend that currently calls it.
+    #[allow(dead_code)]
+    pub async fn seed(&self, name: &str, messages: Vec<Message>) {
+        let topic = Arc::new(Topic::new(self.cache_size));
+        topic.seed(messages).await;
+        self.topics.insert(name.to_string(), topic);
     }
 
     /// Get or create a topic. Returns `None` if the topic doesn't exist yet
@@ -167,4 +202,32 @@ pub struct PubSubStats {
     pub topics: usize,
     pub total_subscribers: u64,
     pub topic_names: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn topic_exists_reflects_creation_without_creating_on_check() {
+        let ps = PubSub::new(10, 10);
+        assert!(!ps.topic_exists("alerts"));
+        ps.get_or_create("alerts");
+        assert!(ps.topic_exists("alerts"));
+        // A second, unrelated topic name is still unknown.
+        assert!(!ps.topic_exists("backups"));
+    }
+
+    #[test]
+    fn get_or_create_returns_none_once_max_topics_reached() {
+        let ps = PubSub::new(10, 2);
+        assert!(ps.get_or_create("a").is_some());
+        assert!(ps.get_or_create("b").is_some());
+        assert!(
+            ps.get_or_create("c").is_none(),
+            "third topic should be rejected at the cap"
+        );
+        // Existing topics remain reachable even while at the cap.
+        assert!(ps.get_or_create("a").is_some());
+    }
 }

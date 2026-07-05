@@ -51,7 +51,37 @@ pub struct Config {
     #[arg(long, env = "NSFY_TRUST_PROXY", default_value_t = false)]
     pub trust_proxy: bool,
 
+    /// Publish bandwidth budget per client IP, in message bytes per minute.
+    /// Separate from --rate-limit-per-min: that one counts requests, this
+    /// one counts payload size, so a few maximum-size messages can't sneak
+    /// under a request-count-only budget.
+    #[arg(long, env = "NSFY_BANDWIDTH_LIMIT_PER_MIN", default_value = "10000000")]
+    pub bandwidth_limit_per_min: u64,
+
+    /// How many brand-new topics a single IP may create per minute. Separate
+    /// from --max-topics (the global ceiling): this shapes the rate of
+    /// creation, not just the total count, so one IP can't claim the whole
+    /// topic table's remaining headroom in a burst.
+    #[arg(long, env = "NSFY_TOPIC_CREATION_LIMIT_PER_MIN", default_value = "20")]
+    pub topic_creation_limit_per_min: u32,
+
     /// How often to log stats (seconds, 0 = disabled)
     #[arg(long, env = "NSFY_STATS_INTERVAL", default_value = "60")]
     pub stats_interval: u64,
+
+    /// Path to a SQLite database file for persisting messages across
+    /// restarts. Unset (the default) means pure in-memory — messages are
+    /// lost on restart.
+    #[arg(long, env = "NSFY_DB_PATH")]
+    pub db_path: Option<String>,
+
+    /// How many messages to retain per topic in the database — same
+    /// ring-buffer semantics as --cache-size, just on disk. Defaults to
+    /// --cache-size so the database never silently holds more history than
+    /// what's already visible through the in-memory replay cache. This is
+    /// a per-topic bound, not "keep everything forever": worst-case total
+    /// rows is bounded by --max-topics × this value, so size it with that
+    /// product in mind.
+    #[arg(long, env = "NSFY_DB_KEEP_PER_TOPIC")]
+    pub db_keep_per_topic: Option<usize>,
 }

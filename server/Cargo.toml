@@ -26,6 +26,11 @@ chrono = { version = "0.4", features = ["serde"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-core = "0.3"
 
+# Message persistence — bundled so there's no system sqlite3 dependency,
+# just a bigger binary. Always compiled in; --db-path (unset by default)
+# decides whether it's actually used at runtime.
+rusqlite = { version = "0.32", features = ["bundled"] }
+
 [profile.release]
 lto = true
 codegen-units = 1
