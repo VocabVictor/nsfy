@@ -30,6 +30,14 @@ export const topics = writable<Topic[]>([]);
 export const activeTopic = writable<string | null>(null);
 export const activeTab = writable<'topics' | 'publish' | 'settings'>('topics');
 
+export type PopupPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
+
+// When true, a priority>=4 message also shows a small macOS-style banner
+// window at popupPosition, on top of everything, in addition to the
+// background OS notification — for whoever wants it impossible to miss.
+export const popupOnNotify = writable<boolean>(false);
+export const popupPosition = writable<PopupPosition>('top-right');
+
 // --- Persistence ---
 export function loadState() {
   const raw = localStorage.getItem('nsfy-state');
@@ -42,6 +50,8 @@ export function loadState() {
           ...t, connected: false, unread: t.unread || 0, messages: [],
         })));
       }
+      if (typeof data.popupOnNotify === 'boolean') popupOnNotify.set(data.popupOnNotify);
+      if (typeof data.popupPosition === 'string') popupPosition.set(data.popupPosition);
     } catch {}
   }
   if (get(servers).length === 0) {
@@ -55,6 +65,8 @@ export function persistState() {
   localStorage.setItem('nsfy-state', JSON.stringify({
     servers: s,
     topics: t.map(t => ({ name: t.name, server: t.server, unread: t.unread })),
+    popupOnNotify: get(popupOnNotify),
+    popupPosition: get(popupPosition),
   }));
 }
 
@@ -108,6 +120,16 @@ export function addServer(url: string, name: string) {
 export function removeServer(url: string) {
   servers.update(s => s.filter(x => x.url !== url));
   topics.update(ts => ts.filter(t => t.server !== url));
+  persistState();
+}
+
+export function setPopupOnNotify(value: boolean) {
+  popupOnNotify.set(value);
+  persistState();
+}
+
+export function setPopupPosition(value: PopupPosition) {
+  popupPosition.set(value);
   persistState();
 }
 

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { get } from 'svelte/store';
+  import { invoke } from '@tauri-apps/api/core';
   import {
-    topics, servers, activeTopic,
+    topics, servers, activeTopic, popupOnNotify, popupPosition,
     addTopic, removeTopic, addMessage, setConnected, fmtTime,
   } from './stores/nsfy';
   import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
@@ -37,10 +38,21 @@
         try {
           const msg = JSON.parse(e.data);
           addMessage(name, server, msg);
-          // Native OS notification for high-priority messages, so they're
-          // seen even while the window is hidden in the tray.
-          if (msg.priority >= 4 && notifyPermission) {
-            sendNotification({ title: msg.title || name, body: msg.message });
+          if (msg.priority >= 4) {
+            // Native OS notification, seen even while the window is
+            // hidden in the tray.
+            if (notifyPermission) {
+              sendNotification({ title: msg.title || name, body: msg.message });
+            }
+            // Optional macOS-style banner window, on top of everything,
+            // at whichever corner the user picked in Settings.
+            if (get(popupOnNotify)) {
+              invoke('show_notification_popup', {
+                title: msg.title || name,
+                body: msg.message,
+                position: get(popupPosition),
+              }).catch(() => {});
+            }
           }
         } catch {}
       };
@@ -88,6 +100,7 @@
   </header>
 
   {#if showAdd}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="add-form" onkeydown={(e) => {
       if (e.key === 'Escape') { showAdd = false; }
       if (e.key === 'Enter' && newTopicName) {

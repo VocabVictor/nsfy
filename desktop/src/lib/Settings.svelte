@@ -1,5 +1,17 @@
 <script lang="ts">
-  import { servers, topics, addServer, removeServer } from './stores/nsfy';
+  import {
+    servers, topics, addServer, removeServer,
+    popupOnNotify, popupPosition, setPopupOnNotify, setPopupPosition,
+    type PopupPosition,
+  } from './stores/nsfy';
+
+  const positions: { value: PopupPosition; label: string }[] = [
+    { value: 'top-left', label: 'Top left' },
+    { value: 'top-right', label: 'Top right' },
+    { value: 'bottom-left', label: 'Bottom left' },
+    { value: 'bottom-right', label: 'Bottom right' },
+    { value: 'center', label: 'Center' },
+  ];
 
   let newUrl = $state('');
   let newName = $state('');
@@ -31,6 +43,7 @@
   </header>
 
   {#if showAdd}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="add-form" onkeydown={(e) => {
       if (e.key === 'Escape') showAdd = false;
       if (e.key === 'Enter') submitAdd();
@@ -57,6 +70,31 @@
         </button>
       </div>
     {/each}
+  </div>
+
+  <div class="section">
+    <h2>Notifications</h2>
+    <label class="toggle-row">
+      <input
+        type="checkbox"
+        checked={$popupOnNotify}
+        onchange={(e) => setPopupOnNotify(e.currentTarget.checked)}
+      />
+      <span>Show a banner window for high-priority messages</span>
+    </label>
+    {#if $popupOnNotify}
+      <div class="position-grid">
+        {#each positions as p}
+          <button
+            class="pos-btn"
+            class:active={$popupPosition === p.value}
+            onclick={() => setPopupPosition(p.value)}
+          >
+            {p.label}
+          </button>
+        {/each}
+      </div>
+    {/if}
   </div>
 
   <div class="section">
@@ -102,6 +140,23 @@
     font-size: 11px; font-weight: 600; color: var(--text-3);
     text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
   }
+  .toggle-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0; font-size: 13px; color: var(--text-2); cursor: pointer;
+  }
+  .toggle-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+  .position-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
+    margin-top: 4px; margin-bottom: 8px;
+  }
+  .pos-btn {
+    padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--border);
+    background: var(--bg-2); color: var(--text-2); font-size: 12px; cursor: pointer;
+    font-family: inherit; transition: all 0.12s;
+  }
+  .pos-btn:hover { background: var(--bg-3); color: var(--text-1); }
+  .pos-btn.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+  .pos-btn:last-child { grid-column: 1 / -1; }
   .server-item {
     display: flex; align-items: center; gap: 12px; padding: 12px 16px;
     background: var(--bg-2); border-radius: var(--r-lg); border: 1px solid var(--border); margin-bottom: 4px;

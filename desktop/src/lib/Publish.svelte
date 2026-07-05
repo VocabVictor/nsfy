@@ -51,32 +51,32 @@
   <header><h1>Publish</h1></header>
   <div class="form">
     <div class="row">
-      <label>Server</label>
-      <select bind:value={serverUrl}>
+      <label for="pub-server">Server</label>
+      <select id="pub-server" bind:value={serverUrl}>
         {#each $servers as s}
           <option value={s.url}>{s.name} ({s.url})</option>
         {/each}
       </select>
     </div>
     <div class="row">
-      <label>Topic</label>
-      <input type="text" list="topic-list" placeholder="topic name" bind:value={topicName} />
+      <label for="pub-topic">Topic</label>
+      <input id="pub-topic" type="text" list="topic-list" placeholder="topic name" bind:value={topicName} />
       <datalist id="topic-list">
         {#each serverTopics as t}
-          <option value={t.name} />
+          <option value={t.name}></option>
         {/each}
       </datalist>
     </div>
     <div class="row">
-      <label>Title <span class="opt">optional</span></label>
-      <input type="text" placeholder="Notification title" bind:value={title} />
+      <label for="pub-title">Title <span class="opt">optional</span></label>
+      <input id="pub-title" type="text" placeholder="Notification title" bind:value={title} />
     </div>
     <div class="row">
-      <label>Message</label>
-      <textarea placeholder="What do you want to send?" bind:value={message} rows="4"></textarea>
+      <label for="pub-message">Message</label>
+      <textarea id="pub-message" placeholder="What do you want to send?" bind:value={message} rows="4"></textarea>
     </div>
     <div class="row">
-      <label>Priority</label>
+      <span class="row-label">Priority</span>
       <div class="priority-row">
         {#each [1,2,3,4,5] as p}
           <button class="pri-btn" class:active={priority === p} onclick={() => priority = p}>{p}</button>
@@ -84,8 +84,8 @@
       </div>
     </div>
     <div class="row">
-      <label>Tags <span class="opt">comma-separated</span></label>
-      <input type="text" placeholder="e.g. backup, db" bind:value={tags} />
+      <label for="pub-tags">Tags <span class="opt">comma-separated</span></label>
+      <input id="pub-tags" type="text" placeholder="e.g. backup, db" bind:value={tags} />
     </div>
     <button class="pub-btn" disabled={!message.trim() || status === 'sending'} onclick={doPublish}>
       {status === 'sending' ? 'Sending...' : 'Send Notification'}
@@ -107,7 +107,7 @@
   header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.2px; color: var(--text-1); }
   .form { display: flex; flex-direction: column; gap: 16px; }
   .row { display: flex; flex-direction: column; gap: 6px; }
-  label { font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; }
+  label, .row-label { font-size: 11px; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.5px; }
   .opt { font-weight: 400; color: var(--text-4); text-transform: none; }
   select, input, textarea {
     background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-md);
