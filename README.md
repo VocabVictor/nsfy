@@ -124,6 +124,39 @@ Message format:
 
 Priority runs 1 (low) through 5 (critical). Tags are free-form strings — filter on the client side however you want.
 
+## Security
+
+```bash
+./target/release/nsfyd \
+  --listen 0.0.0.0:8080 \
+  --auth-token "$(openssl rand -hex 32)" \
+  --rate-limit-per-min 300 \
+  --max-topics 10000
+```
+
+| Flag / env | Default | What it does |
+|---|---|---|
+| `--auth-token` / `NSFY_AUTH_TOKEN` | none | When set, every route — including `/` — requires it. Pass it as `Authorization: Bearer <token>` (preferred, doesn't leak into access logs) or `?auth=<token>`. Compared in constant time so a wrong guess can't be timed. |
+| `--rate-limit-per-min` / `NSFY_RATE_LIMIT_PER_MIN` | 300 | Per-IP token bucket covering HTTP requests and WS-originated publishes alike. Over budget → `429`. |
+| `--max-topics` / `NSFY_MAX_TOPICS` | 10000 | Caps how many distinct topics the server will track at once, so an unauthenticated caller can't grow the topic table without bound. Over the cap → `503` for new topic names. |
+| `--max-msg-size` / `NSFY_MAX_MSG_SIZE` | 65536 | Enforced both on the raw HTTP body and on the `message` field (also bounds WS frame/message size). `title` is capped at 512 bytes, tags at 32 entries of 64 bytes each. |
+| `--topic-rate-limit-per-min` / `NSFY_TOPIC_RATE_LIMIT_PER_MIN` | 1200 | Aggregate publish budget per topic, across all IPs — catches a distributed flood aimed at one topic that per-IP limiting alone won't. |
+| `--max-conns-per-ip` / `NSFY_MAX_CONNS_PER_IP` | 20 | Concurrent WS/SSE connections allowed per IP. Each connection only costs one request against the rate limiter, so this caps the separate cost of holding sockets open. |
+| `--max-conns-total` / `NSFY_MAX_CONNS_TOTAL` | 10000 | Concurrent WS/SSE connections allowed server-wide. |
+| `--trust-proxy` / `NSFY_TRUST_PROXY` | false | Use `X-Forwarded-For` / `X-Real-IP` as the client IP for rate limiting instead of the TCP peer address. **Only enable this behind a reverse proxy you control that sets/overwrites these headers** — see the TLS note below for why this matters. |
+
+Topic names are restricted to `[A-Za-z0-9._-]`, max 128 characters — long enough for anything reasonable, and it keeps control characters out of log lines. Invalid names get a `400`.
+
+If you run without `--auth-token`, the topic name is your only secret — pick something unguessable (`curl .../$(openssl rand -hex 16)`), same as ntfy.sh's model. Once you set a token, `/` also requires it, so topic names can't be enumerated by an outsider.
+
+A panic in one request's handler is caught and turned into a `500` — it can't take the whole process (and every other client's connection) down with it.
+
+### TLS
+
+`nsfyd` speaks plain HTTP/WS, no TLS built in — that's a deliberate size tradeoff. Put a reverse proxy (nginx, Caddy, [Tailscale Serve](https://tailscale.com/kb/1312/serve)) in front for anything that crosses a network you don't control, otherwise the token and every message go out in cleartext.
+
+If you do put a reverse proxy in front, pass `--trust-proxy` so rate limiting keys on the real client IP instead of the proxy's — but only if `nsfyd` itself isn't *also* reachable directly. If it is, a client can set its own `X-Forwarded-For` and dodge its rate limit entirely.
+
 ## Components
 
 | Piece | Stack | Size | Notes |

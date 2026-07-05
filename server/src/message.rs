@@ -29,7 +29,7 @@ impl Message {
     }
 
     pub fn with_priority(mut self, p: u8) -> Self {
-        self.priority = p.min(5).max(1);
+        self.priority = p.clamp(1, 5);
         self
     }
 

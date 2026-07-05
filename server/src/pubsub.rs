@@ -72,70 +72,87 @@ impl Topic {
     }
 }
 
+/// Cached backlog plus a live receiver, returned by `PubSub::subscribe`.
+pub type Subscription = (Vec<Arc<Message>>, broadcast::Receiver<Arc<Message>>);
+
 /// Global topic registry.
 pub struct PubSub {
     topics: DashMap<String, Arc<Topic>>,
     cache_size: usize,
+    max_topics: usize,
 }
 
 impl PubSub {
-    pub fn new(cache_size: usize) -> Self {
-        info!("pubsub engine initialized, cache_size={}", cache_size);
+    pub fn new(cache_size: usize, max_topics: usize) -> Self {
+        info!(
+            "pubsub engine initialized, cache_size={}, max_topics={}",
+            cache_size, max_topics
+        );
         Self {
             topics: DashMap::new(),
             cache_size,
+            max_topics,
         }
     }
 
-    /// Get or create a topic.
-    pub fn get_or_create(&self, name: &str) -> Arc<Topic> {
+    /// Get or create a topic. Returns `None` if the topic doesn't exist yet
+    /// and the server is already at `max_topics`, so an unauthenticated
+    /// caller can't grow the topic table without bound.
+    pub fn get_or_create(&self, name: &str) -> Option<Arc<Topic>> {
         // Fast path: already exists
         if let Some(topic) = self.topics.get(name) {
-            return Arc::clone(&topic);
+            return Some(Arc::clone(&topic));
+        }
+        if self.topics.len() >= self.max_topics {
+            return None;
         }
         // Slow path: create
         let topic = Arc::new(Topic::new(self.cache_size));
         self.topics.insert(name.to_string(), Arc::clone(&topic));
         debug!("topic created: {}", name);
-        topic
+        Some(topic)
     }
 
     /// Publish a message to a topic (creates topic if needed).
-    pub async fn publish(&self, topic: &str, msg: Message) {
-        let t = self.get_or_create(topic);
+    pub async fn publish(&self, topic: &str, msg: Message) -> bool {
+        let Some(t) = self.get_or_create(topic) else {
+            return false;
+        };
         t.publish(msg).await;
         trace!("published to topic: {}", topic);
+        true
     }
 
     /// Subscribe to a topic, first receiving cached messages, then live.
-    pub fn subscribe(&self, topic: &str) -> (Vec<Arc<Message>>, broadcast::Receiver<Arc<Message>>) {
-        let t = self.get_or_create(topic);
+    pub fn subscribe(&self, topic: &str) -> Option<Subscription> {
+        let t = self.get_or_create(topic)?;
         // We can't call async all_messages in sync context easily,
         // so return an empty vec and let caller handle cache separately.
         let rx = t.subscribe();
-        (Vec::new(), rx)
+        Some((Vec::new(), rx))
     }
 
     /// Get cached messages for a topic (owned).
-    pub async fn get_messages(&self, topic: &str, since_id: Option<&str>) -> Vec<Message> {
-        let t = self.get_or_create(topic);
+    pub async fn get_messages(&self, topic: &str, since_id: Option<&str>) -> Option<Vec<Message>> {
+        let t = self.get_or_create(topic)?;
         let arcs = t.messages_since(since_id).await;
-        arcs.iter().map(|m| (**m).clone()).collect()
+        Some(arcs.iter().map(|m| (**m).clone()).collect())
     }
 
     /// Get cached messages as Arc for internal use (WS broadcast).
-    pub async fn get_messages_arc(&self, topic: &str, since_id: Option<&str>) -> Vec<Arc<Message>> {
-        let t = self.get_or_create(topic);
-        t.messages_since(since_id).await
+    pub async fn get_messages_arc(
+        &self,
+        topic: &str,
+        since_id: Option<&str>,
+    ) -> Option<Vec<Arc<Message>>> {
+        let t = self.get_or_create(topic)?;
+        Some(t.messages_since(since_id).await)
     }
 
     pub fn stats(&self) -> PubSubStats {
         let topic_count = self.topics.len();
         let total_subscribers: u64 = self.topics.iter().map(|t| t.subscriber_count()).sum();
-        let topic_names: Vec<String> = self.topics
-            .iter()
-            .map(|t| t.key().clone())
-            .collect();
+        let topic_names: Vec<String> = self.topics.iter().map(|t| t.key().clone()).collect();
 
         PubSubStats {
             topics: topic_count,

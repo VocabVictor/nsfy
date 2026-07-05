@@ -122,6 +122,39 @@ curl http://localhost:8080/
 
 优先级 1（最低）到 5（最高）。tags 是字符串数组，客户端自行过滤。
 
+## 安全
+
+```bash
+./target/release/nsfyd \
+  --listen 0.0.0.0:8080 \
+  --auth-token "$(openssl rand -hex 32)" \
+  --rate-limit-per-min 300 \
+  --max-topics 10000
+```
+
+| 参数 / 环境变量 | 默认值 | 作用 |
+|---|---|---|
+| `--auth-token` / `NSFY_AUTH_TOKEN` | 无 | 设置后，所有路由（包括 `/`）都需要鉴权。推荐用 `Authorization: Bearer <token>`（不会泄露到访问日志里），也支持 `?auth=<token>`。比较时使用常数时间算法，防止通过响应耗时猜出 token。 |
+| `--rate-limit-per-min` / `NSFY_RATE_LIMIT_PER_MIN` | 300 | 按客户端 IP 做令牌桶限流，HTTP 请求和 WebSocket 内发布共享同一配额，超限返回 `429`。 |
+| `--max-topics` / `NSFY_MAX_TOPICS` | 10000 | 服务端同时跟踪的 topic 总数上限，防止未鉴权调用者无限创建 topic 撑爆内存。超限时新 topic 名会返回 `503`。 |
+| `--max-msg-size` / `NSFY_MAX_MSG_SIZE` | 65536 | 同时作用于原始 HTTP body 大小和 `message` 字段长度（也约束 WS 帧/消息大小）。`title` 上限 512 字节，tags 最多 32 个、每个 64 字节。 |
+| `--topic-rate-limit-per-min` / `NSFY_TOPIC_RATE_LIMIT_PER_MIN` | 1200 | 单个 topic 跨所有 IP 的聚合发布配额，用来防住"每个 IP 都守规矩，但联合起来灌爆同一个 topic"的分布式攻击。 |
+| `--max-conns-per-ip` / `NSFY_MAX_CONNS_PER_IP` | 20 | 单 IP 允许的并发 WS/SSE 连接数。每个连接在限流器里只算一次请求，这个参数单独限制"占着连接不放"的开销。 |
+| `--max-conns-total` / `NSFY_MAX_CONNS_TOTAL` | 10000 | 服务端全局允许的并发 WS/SSE 连接数。 |
+| `--trust-proxy` / `NSFY_TRUST_PROXY` | false | 限流时用 `X-Forwarded-For` / `X-Real-IP` 作为客户端 IP，而不是 TCP 对端地址。**只有在你自己控制、会覆写这些头的反向代理后面才能开**，原因见下面 TLS 部分。 |
+
+topic 名只允许 `[A-Za-z0-9._-]`，最长 128 字符——足够覆盖正常用法，同时避免控制字符混进日志（日志注入）。不合法的名字会返回 `400`。
+
+如果不设置 `--auth-token`，topic 名本身就是你唯一的"密码"——建议用不可猜测的随机字符串（比如 `curl .../$(openssl rand -hex 16)`），这和 ntfy.sh 的模型一致。一旦设置了 token，`/` 统计接口也会一并被保护，外部调用者就无法枚举出 topic 名单了。
+
+单个请求处理过程中的 panic 会被捕获并转成 `500`，不会把整个进程（以及其他所有客户端的连接）一起拖垮。
+
+### TLS
+
+`nsfyd` 本身只说明文 HTTP/WS，没有内置 TLS——这是为了控制体积做的取舍。只要流量会经过你不完全控制的网络，就在前面套一层反向代理（nginx、Caddy、[Tailscale Serve](https://tailscale.com/kb/1312/serve)），否则 token 和所有消息内容都是明文传输。
+
+如果套了反向代理，记得加上 `--trust-proxy`，让限流认真实客户端 IP 而不是代理自己的 IP——但前提是 `nsfyd` 不能同时也被直接暴露访问。如果能被绕过代理直接访问，客户端可以自己伪造 `X-Forwarded-For`，直接绕开限流。
+
 ## 三端
 
 | 端 | 技术 | 体积 | 说明 |

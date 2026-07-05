@@ -9,7 +9,7 @@ license = "MIT"
 axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "catch-panic"] }
 
 dashmap = "6"
 uuid = { version = "1", features = ["v4", "v7"] }
@@ -31,4 +31,7 @@ lto = true
 codegen-units = 1
 opt-level = "z"
 strip = true
-panic = "abort"
+# Deliberately NOT panic = "abort": a panic in one request handler must not
+# take down every other client's connection. CatchPanicLayer in main.rs
+# converts a per-request panic into a 500 instead of a process exit, which
+# only works with unwinding enabled.
