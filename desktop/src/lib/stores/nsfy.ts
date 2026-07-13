@@ -38,6 +38,11 @@ export type PopupPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-r
 export const popupOnNotify = writable<boolean>(false);
 export const popupPosition = writable<PopupPosition>('top-right');
 
+// Layout direction: 1a 分栏排版 (sidebar topic list + message stream) vs
+// 1b 统一时间线 (single inbox + date grouping, topic as label).
+export type LayoutMode = 'split' | 'timeline';
+export const layoutMode = writable<LayoutMode>('split');
+
 // --- Persistence ---
 export function loadState() {
   const raw = localStorage.getItem('nsfy-state');
@@ -52,6 +57,7 @@ export function loadState() {
       }
       if (typeof data.popupOnNotify === 'boolean') popupOnNotify.set(data.popupOnNotify);
       if (typeof data.popupPosition === 'string') popupPosition.set(data.popupPosition);
+      if (data.layoutMode === 'split' || data.layoutMode === 'timeline') layoutMode.set(data.layoutMode);
     } catch {}
   }
   if (get(servers).length === 0) {
@@ -67,6 +73,7 @@ export function persistState() {
     topics: t.map(t => ({ name: t.name, server: t.server, unread: t.unread })),
     popupOnNotify: get(popupOnNotify),
     popupPosition: get(popupPosition),
+    layoutMode: get(layoutMode),
   }));
 }
 
@@ -133,21 +140,70 @@ export function setPopupPosition(value: PopupPosition) {
   persistState();
 }
 
+export function setLayoutMode(value: LayoutMode) {
+  layoutMode.set(value);
+  persistState();
+}
+
 // --- Formatting ---
+// Chinese relative time, matching the design mockup.
 export function fmtTime(ts: number): string {
-  const d = new Date(ts * 1000);
   const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  if (isToday) {
-    return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const d = new Date(ts * 1000);
+  const diff = now.getTime() - d.getTime();
+  if (diff < 60_000) return '刚刚';
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(d, yesterday)) return `昨天 ${hm}`;
+  const dayDiff = Math.floor((now.getTime() - d.getTime()) / 86400_000);
+  if (dayDiff < 7) {
+    const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
+    return `${week} ${hm}`;
   }
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
-    ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+}
+
+// Which calendar group a timestamp falls into, for the 1b timeline.
+export function dateGroup(ts: number): '今天' | '昨天' | '更早' {
+  const now = new Date();
+  const d = new Date(ts * 1000);
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(d, now)) return '今天';
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(d, yesterday)) return '昨天';
+  return '更早';
 }
 
 export function priorityColor(p: number): string {
   if (p >= 5) return '#ef4444';
   if (p >= 4) return '#f97316';
-  if (p >= 3) return '#eab308';
-  return '#6b7280';
+  if (p >= 3) return '#6b7280';
+  return '#9ca3af';
+}
+
+// Named priority label, matching the design (紧急/高/普通/低).
+export function priorityLabel(p: number): string {
+  if (p >= 5) return '紧急';
+  if (p >= 4) return '高';
+  if (p >= 3) return '普通';
+  return '低';
+}
+
+// Deterministic color for a topic, used as the topic dot/tag in 1b timeline
+// and the topic list. Stable per topic name, no schema change needed.
+const TOPIC_PALETTE = [
+  '#ef4444', '#f97316', '#f59e0b', '#22c55e',
+  '#14b8a6', '#0ea5e9', '#3b82f6', '#8b5cf6',
+];
+export function topicColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return TOPIC_PALETTE[h % TOPIC_PALETTE.length];
 }
