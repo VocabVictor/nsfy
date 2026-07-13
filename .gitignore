@@ -26,3 +26,6 @@ android/*.iml
 .vscode/
 *.swp
 *.swo
+
+# 设计稿 (不追踪)
+*设计稿.pdf
