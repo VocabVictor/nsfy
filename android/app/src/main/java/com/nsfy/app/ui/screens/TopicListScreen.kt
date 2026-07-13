@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import com.nsfy.app.data.model.TopicEntity
 import com.nsfy.app.data.model.fmtTime
 import com.nsfy.app.data.repository.NsfyRepository
+import com.nsfy.app.ui.theme.topicColor
 import com.nsfy.app.NsfyApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -32,7 +33,7 @@ fun TopicListScreen() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("nsfy", fontWeight = FontWeight.Bold) },
+                title = { Text("信鸽", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
@@ -61,12 +62,12 @@ fun TopicListScreen() {
                     Text("🔔", style = MaterialTheme.typography.displayMedium)
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        "No topics yet",
+                        "暂无主题",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Text(
-                        "Tap ＋ to subscribe",
+                        "点击 ＋ 订阅主题",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
@@ -125,7 +126,7 @@ fun TopicCard(topic: TopicEntity, onClick: () -> Unit) {
                 modifier = Modifier.size(8.dp),
                 shape = MaterialTheme.shapes.extraLarge,
                 color = if (topic.isConnected)
-                    MaterialTheme.colorScheme.primary
+                    topicColor(topic.name)
                 else
                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
             ) {}
@@ -164,13 +165,13 @@ fun AddTopicDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Subscribe to Topic") },
+        title = { Text("订阅主题") },
         text = {
             Column {
                 OutlinedTextField(
                     value = server,
                     onValueChange = { server = it },
-                    label = { Text("Server URL") },
+                    label = { Text("服务器地址") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -178,7 +179,7 @@ fun AddTopicDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Topic name") },
+                    label = { Text("主题名") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -189,11 +190,11 @@ fun AddTopicDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
                 onClick = { onAdd(server, name) },
                 enabled = server.isNotBlank() && name.isNotBlank(),
             ) {
-                Text("Subscribe")
+                Text("订阅")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text("取消") }
         },
     )
 }

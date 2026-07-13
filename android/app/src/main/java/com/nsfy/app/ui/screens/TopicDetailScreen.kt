@@ -95,7 +95,7 @@ fun TopicDetailScreen(
                     OutlinedTextField(
                         value = replyTitle,
                         onValueChange = { replyTitle = it },
-                        placeholder = { Text("Title (optional)") },
+                        placeholder = { Text("标题（可选）") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -107,7 +107,7 @@ fun TopicDetailScreen(
                         OutlinedTextField(
                             value = replyText,
                             onValueChange = { replyText = it },
-                            placeholder = { Text("Type a message...") },
+                            placeholder = { Text("发送通知…") },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                         )
@@ -137,7 +137,15 @@ fun TopicDetailScreen(
                     .padding(padding),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("No messages yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("暂无消息", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "在下方发布，或等待服务器推送",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    )
+                }
             }
         } else {
             LazyColumn(
@@ -178,7 +186,14 @@ fun MessageCard(msg: MessageEntity) {
                     )
                 }
                 Row {
-                    if (msg.priority >= 4) Text(priorityEmoji(msg.priority))
+                    if (msg.priority >= 4) {
+                        Text(
+                            priorityLabel(msg.priority),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = com.nsfy.app.ui.theme.priorityColor(msg.priority),
+                        )
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         fmtTime(msg.time),

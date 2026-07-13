@@ -12,9 +12,9 @@ data class ServerItem(val url: String, val name: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
     val prefs = NsfyApp.instance.getSharedPreferences(
-        "nsfy_prefs", android.content.Context.MODE_PRIVATE
+        PREFS_NAME, android.content.Context.MODE_PRIVATE
     )
     val initialServers = remember {
         val urls = prefs.getStringSet("servers", emptySet()) ?: emptySet()
@@ -25,11 +25,14 @@ fun SettingsScreen() {
     }
     var servers by remember { mutableStateOf(initialServers) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var layoutMode by remember {
+        mutableStateOf(prefs.getString(KEY_LAYOUT_MODE, "split") ?: "split")
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings", fontWeight = FontWeight.Bold) },
+                title = { Text("设置", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
@@ -44,7 +47,34 @@ fun SettingsScreen() {
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Servers",
+                "布局",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = layoutMode == "split",
+                    onClick = {
+                        layoutMode = "split"
+                        onLayoutChange("split")
+                    },
+                    label = { Text("分栏排版") },
+                )
+                FilterChip(
+                    selected = layoutMode == "timeline",
+                    onClick = {
+                        layoutMode = "timeline"
+                        onLayoutChange("timeline")
+                    },
+                    label = { Text("统一时间线") },
+                )
+            }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+            Text(
+                "服务器",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
@@ -92,24 +122,24 @@ fun SettingsScreen() {
                 onClick = { showAddDialog = true },
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text("＋ Add Server")
+                Text("＋ 添加服务器")
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             Text(
-                "About",
+                "关于信鸽",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                "nsfy Android v0.1.0",
+                "信鸽 Android v0.1.0",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                "A minimal, high-performance pub-sub notification system.",
+                "订阅主题，接收服务器推送。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             )
@@ -122,13 +152,13 @@ fun SettingsScreen() {
 
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
-            title = { Text("Add Server") },
+            title = { Text("添加服务器") },
             text = {
                 Column {
                     OutlinedTextField(
                         value = newUrl,
                         onValueChange = { newUrl = it },
-                        label = { Text("Server URL") },
+                        label = { Text("服务器地址") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -136,7 +166,7 @@ fun SettingsScreen() {
                     OutlinedTextField(
                         value = newName,
                         onValueChange = { newName = it },
-                        label = { Text("Display name") },
+                        label = { Text("显示名称") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -158,11 +188,11 @@ fun SettingsScreen() {
                     },
                     enabled = newUrl.isNotBlank() && newName.isNotBlank(),
                 ) {
-                    Text("Add")
+                    Text("添加")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showAddDialog = false }) { Text("取消") }
             },
         )
     }
