@@ -7,7 +7,7 @@ desktop/dist/
 
 # Tauri
 desktop/src-tauri/target/
-desktop/src-tauri/icons/
+
 
 # Android
 android/.gradle/
@@ -29,3 +29,7 @@ android/*.iml
 
 # 设计稿 (不追踪)
 *设计稿.pdf
+
+# Release signing (local only)
+android/keystore.properties
+*.keystore
