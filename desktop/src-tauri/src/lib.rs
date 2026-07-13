@@ -34,13 +34,15 @@ pub struct AppState {
     /// Set right before creating the notification popup window, and pulled
     /// once by that window's own frontend on mount — avoids any race with
     /// emitting an event to a window that isn't listening yet.
-    pub pending_notification: Mutex<Option<PopupContent>>,
+    pub pending_notification: Mutex<Option<Vec<PopupContent>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PopupContent {
     pub title: String,
     pub body: String,
+    pub time: i64,
+    pub priority: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,16 +83,15 @@ async fn publish_message(
     }
 }
 
-/// macOS-style notification banner: a small, borderless, always-on-top
-/// window at a corner (or center) of the screen, closing itself after a
-/// few seconds. Separate from the main window entirely, so it never
-/// requires bringing the whole app to the front — it just sits on top.
+/// Compact notification center: a small, borderless, always-on-top window
+/// at a corner (or center) of the screen listing the latest messages,
+/// closing itself after a few seconds. Separate from the main window
+/// entirely, so it never requires bringing the whole app to the front.
 #[tauri::command]
 async fn show_notification_popup(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
-    title: String,
-    body: String,
+    messages: Vec<PopupContent>,
     position: String,
 ) -> Result<(), String> {
     // A burst of messages shouldn't stack up multiple banners — replace
@@ -99,10 +100,10 @@ async fn show_notification_popup(
         let _ = existing.close();
     }
 
-    *state.pending_notification.lock().unwrap() = Some(PopupContent { title, body });
+    *state.pending_notification.lock().unwrap() = Some(messages);
 
-    const WIDTH: f64 = 340.0;
-    const HEIGHT: f64 = 110.0;
+    const WIDTH: f64 = 360.0;
+    const HEIGHT: f64 = 300.0;
     const MARGIN: f64 = 16.0;
     // Extra clearance on the bottom edge so the banner doesn't land under
     // the Windows taskbar (or macOS Dock, if it's bottom-anchored there).
@@ -141,7 +142,7 @@ async fn show_notification_popup(
         "notification-popup",
         tauri::WebviewUrl::App("index.html?popup=1".into()),
     )
-    .title("nsfy notification")
+    .title("信鸽通知")
     .inner_size(WIDTH, HEIGHT)
     .position(x, y)
     .decorations(false)
@@ -166,7 +167,7 @@ async fn show_notification_popup(
 
 /// Pulled once by the popup window's own frontend right after it mounts.
 #[tauri::command]
-fn get_pending_notification(state: tauri::State<'_, AppState>) -> Option<PopupContent> {
+fn get_pending_notification(state: tauri::State<'_, AppState>) -> Option<Vec<PopupContent>> {
     state.pending_notification.lock().unwrap().take()
 }
 
@@ -284,8 +285,8 @@ pub fn run() {
             focus_main_window,
         ])
         .setup(|app| {
-            let show_item = MenuItem::with_id(app, "show", "Show nsfy", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let show_item = MenuItem::with_id(app, "show", "显示信鸽", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
 
             TrayIconBuilder::new()
