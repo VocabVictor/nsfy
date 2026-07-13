@@ -1,6 +1,6 @@
 <script lang="ts">
   import {
-    servers, topics, addServer, removeServer,
+    servers, topics, addServer, removeServer, setServerToken,
     popupOnNotify, popupPosition, setPopupOnNotify, setPopupPosition,
     layoutMode, setLayoutMode,
     type PopupPosition,
@@ -16,7 +16,10 @@
 
   let newUrl = $state('');
   let newName = $state('');
+  let newToken = $state('');
   let showAdd = $state(false);
+  let editTokenUrl = $state<string | null>(null);
+  let editTokenValue = $state('');
 
   function focusOnMount(el: HTMLElement) {
     el.focus();
@@ -24,8 +27,20 @@
 
   function submitAdd() {
     if (!newUrl || !newName) return;
-    addServer(newUrl, newName);
-    newUrl = ''; newName = ''; showAdd = false;
+    addServer(newUrl, newName, newToken.trim());
+    newUrl = ''; newName = ''; newToken = ''; showAdd = false;
+  }
+
+  function openTokenEditor(url: string, current: string | undefined) {
+    editTokenUrl = url;
+    editTokenValue = current || '';
+  }
+
+  function saveToken() {
+    if (editTokenUrl === null) return;
+    setServerToken(editTokenUrl, editTokenValue.trim());
+    editTokenUrl = null;
+    editTokenValue = '';
   }
 
   function confirmRemove(url: string, name: string) {
@@ -72,6 +87,7 @@
       }}>
         <input type="text" placeholder="服务器名称（如:家里 VPS）" bind:value={newName} use:focusOnMount />
         <input type="text" placeholder="http://host:port" bind:value={newUrl} />
+        <input type="password" placeholder="访问令牌（可选，服务器开启鉴权时填写）" bind:value={newToken} />
         <button class="btn-primary" disabled={!newUrl || !newName} onclick={submitAdd}>添加</button>
       </div>
     {/if}
@@ -83,8 +99,23 @@
           <div class="server-url">{s.url}</div>
           <div class="server-topics">
             已订阅 {$topics.filter(t => t.server === s.url).length} 个主题
+            {#if s.token}· 已配置令牌{/if}
           </div>
+          {#if editTokenUrl === s.url}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div class="token-edit" onkeydown={(e) => {
+              if (e.key === 'Escape') editTokenUrl = null;
+              if (e.key === 'Enter') saveToken();
+            }}>
+              <input type="password" placeholder="访问令牌（留空清除）"
+                bind:value={editTokenValue} use:focusOnMount />
+              <button class="btn-primary" onclick={saveToken}>保存</button>
+            </div>
+          {/if}
         </div>
+        <button class="token-btn" onclick={() => openTokenEditor(s.url, s.token)} aria-label="配置令牌">
+          <svg viewBox="0 0 16 16" fill="none" width="13" height="13"><path d="M9.5 6.5a3 3 0 1 0-3 3L3 13v-2h2v-2h2l2.5-2.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="10.5" cy="5.5" r="0.8" fill="currentColor"/></svg>
+        </button>
         <button class="del-btn" onclick={() => confirmRemove(s.url, s.name)} aria-label="移除服务器">
           <svg viewBox="0 0 16 16" fill="none" width="13" height="13"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </button>
@@ -196,12 +227,20 @@
   .server-name { font-weight: 600; font-size: 14px; color: var(--text-1); }
   .server-url { font-size: 12px; color: var(--text-3); font-family: monospace; }
   .server-topics { font-size: 11px; color: var(--text-4); margin-top: 2px; }
-  .del-btn {
+  .del-btn, .token-btn {
     width: 26px; height: 26px; border-radius: var(--r-sm);
     border: 1px solid var(--border); background: transparent; color: var(--text-3);
     cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.12s;
+    flex-shrink: 0;
   }
   .del-btn:hover { background: var(--danger-bg); color: var(--danger); border-color: rgba(239,68,68,0.35); }
+  .token-btn:hover { background: var(--accent-dim); color: var(--accent-hover); border-color: var(--accent); }
+  .token-edit { display: flex; gap: 6px; margin-top: 8px; }
+  .token-edit input {
+    flex: 1; background: var(--bg-1); border: 1px solid var(--border); border-radius: var(--r-sm);
+    padding: 7px 10px; color: var(--text-1); font-size: 12px; font-family: inherit; outline: none;
+  }
+  .token-edit input:focus { border-color: var(--accent); }
   .about p { font-size: 13px; color: var(--text-2); }
   .version { margin-top: 4px; color: var(--text-4); font-size: 12px; }
 </style>

@@ -9,7 +9,7 @@
   import {
     topics, servers, activeTopic, layoutMode, popupOnNotify, popupPosition,
     loadState, addTopic, removeTopic, addMessage, setConnected,
-    fmtTime, topicColor,
+    fmtTime, topicColor, withAuth,
   } from './lib/stores/nsfy';
 
   let ready = $state(false);
@@ -42,7 +42,7 @@
   function connectTopic(server: string, name: string) {
     const key = `${server}/${name}`;
     if (sockets.has(key)) return;
-    const url = server.replace(/^http/, 'ws') + `/${name}/ws`;
+    const url = withAuth(server.replace(/^http/, 'ws') + `/${name}/ws`, server);
     try {
       const ws = new WebSocket(url);
       ws.onopen = () => setConnected(name, server, true);

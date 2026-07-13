@@ -162,6 +162,7 @@ fun TopicCard(topic: TopicEntity, onClick: () -> Unit) {
 fun AddTopicDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
     var server by remember { mutableStateOf("http://") }
     var name by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -183,11 +184,26 @@ fun AddTopicDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = { token = it },
+                    label = { Text("访问令牌（可选）") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onAdd(server, name) },
+                onClick = {
+                    if (token.isNotBlank()) {
+                        NsfyApp.instance
+                            .getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+                            .edit().putString("server_token_$server", token.trim()).apply()
+                    }
+                    onAdd(server, name)
+                },
                 enabled = server.isNotBlank() && name.isNotBlank(),
             ) {
                 Text("订阅")

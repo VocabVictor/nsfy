@@ -60,8 +60,9 @@ fun PublishScreen() {
             put("priority", priority)
             put("tags", org.json.JSONArray(tagList))
         }
+        val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
         val request = Request.Builder()
-            .url("$serverUrl/$t")
+            .url(com.nsfy.app.data.model.withAuth("$serverUrl/$t", serverUrl, prefs))
             .post(RequestBody.create(jsonMediaType, body.toString()))
             .build()
         status = "发布中…"

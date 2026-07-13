@@ -57,6 +57,16 @@ data class ServerConfig(
     val name: String,
 )
 
+// --- Auth ---
+// Append ?auth=<token> when a token is stored for the server (prefs key
+// server_token_<url>). Works for both http and ws URLs.
+fun withAuth(url: String, serverUrl: String, prefs: android.content.SharedPreferences): String {
+    val token = prefs.getString("server_token_$serverUrl", null)?.takeIf { it.isNotBlank() }
+        ?: return url
+    val sep = if (url.contains('?')) '&' else '?'
+    return "$url${sep}auth=${java.net.URLEncoder.encode(token, "UTF-8")}"
+}
+
 // --- Formatting helpers ---
 fun fmtTime(ts: Long): String {
     val now = System.currentTimeMillis()

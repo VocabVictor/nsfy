@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { servers, topics } from './stores/nsfy';
+  import { servers, topics, withAuth } from './stores/nsfy';
 
   let { onclose }: { onclose?: () => void } = $props();
 
@@ -42,7 +42,7 @@
       priority,
       tags,
     });
-    const res = await fetch(`${serverUrl}/${t}`, {
+    const res = await fetch(withAuth(`${serverUrl}/${t}`, serverUrl), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,

@@ -97,6 +97,13 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            if (!prefs.getString("server_token_${server.url}", null).isNullOrBlank()) {
+                                Text(
+                                    "已配置令牌",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
                         }
                         TextButton(onClick = {
                             servers = servers.filter { it.url != server.url }
@@ -149,6 +156,7 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
     if (showAddDialog) {
         var newUrl by remember { mutableStateOf("http://") }
         var newName by remember { mutableStateOf("") }
+        var newToken by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
@@ -170,6 +178,14 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = newToken,
+                        onValueChange = { newToken = it },
+                        label = { Text("访问令牌（可选）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             },
             confirmButton = {
@@ -181,6 +197,9 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
                             putStringSet("servers", urls)
                             for (s in servers) {
                                 putString("server_name_${s.url}", s.name)
+                            }
+                            if (newToken.isNotBlank()) {
+                                putString("server_token_$newUrl", newToken.trim())
                             }
                             apply()
                         }

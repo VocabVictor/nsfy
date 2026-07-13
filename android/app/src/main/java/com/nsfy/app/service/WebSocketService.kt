@@ -89,11 +89,15 @@ class WebSocketService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun connectWs(serverUrl: String, topicName: String) {
-        val wsUrl = serverUrl
-            .replace("http://", "ws://")
-            .replace("https://", "wss://") + "/$topicName/ws"
+        val prefs = getSharedPreferences("nsfy_prefs", MODE_PRIVATE)
+        val wsUrl = com.nsfy.app.data.model.withAuth(
+            serverUrl
+                .replace("http://", "ws://")
+                .replace("https://", "wss://") + "/$topicName/ws",
+            serverUrl, prefs,
+        )
         val key = "$serverUrl/$topicName"
-        android.util.Log.i("nsfy", "WebSocketService: connectWs to $wsUrl")
+        android.util.Log.i("nsfy", "WebSocketService: connectWs to $topicName on $serverUrl")
 
         val request = Request.Builder().url(wsUrl).build()
         val ws = okHttp.newWebSocket(request, object : WebSocketListener() {

@@ -52,8 +52,11 @@ fun TopicDetailScreen(
             put("message", replyText)
             put("priority", 3)
         }
+        val prefs = NsfyApp.instance.getSharedPreferences(
+            PREFS_NAME, android.content.Context.MODE_PRIVATE
+        )
         val request = Request.Builder()
-            .url("${topic.serverUrl}/${topic.name}")
+            .url(com.nsfy.app.data.model.withAuth("${topic.serverUrl}/${topic.name}", topic.serverUrl, prefs))
             .post(RequestBody.create(jsonMediaType, body.toString()))
             .build()
         client.newCall(request).enqueue(object : Callback {

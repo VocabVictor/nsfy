@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     topics, activeTopic,
-    markRead, fmtTime, priorityColor, priorityLabel, type Message
+    markRead, fmtTime, priorityColor, priorityLabel, withAuth, type Message
   } from './stores/nsfy';
 
   const topic = $derived($topics.find(t => t.name === $activeTopic));
@@ -17,7 +17,7 @@
   async function doPublish() {
     if (!newMsg.trim() || !serverUrl || !$activeTopic) return;
     try {
-      await fetch(`${serverUrl}/${$activeTopic}`, {
+      await fetch(withAuth(`${serverUrl}/${$activeTopic}`, serverUrl), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: replyTitle, message: newMsg.trim(), priority: 3 }),

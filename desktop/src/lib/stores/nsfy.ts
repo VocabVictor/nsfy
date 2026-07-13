@@ -22,6 +22,8 @@ export interface Topic {
 export interface Server {
   url: string;
   name: string;
+  // Optional auth token for servers started with --auth-token.
+  token?: string;
 }
 
 // --- Stores ---
@@ -116,12 +118,30 @@ export function setConnected(topicName: string, server: string, connected: boole
   ));
 }
 
-export function addServer(url: string, name: string) {
+export function addServer(url: string, name: string, token?: string) {
   servers.update(s => {
     if (s.find(x => x.url === url)) return s;
-    return [...s, { url, name }];
+    return [...s, { url, name, token: token || undefined }];
   });
   persistState();
+}
+
+export function setServerToken(url: string, token: string) {
+  servers.update(s => s.map(x =>
+    x.url === url ? { ...x, token: token || undefined } : x
+  ));
+  persistState();
+}
+
+export function serverToken(url: string): string | undefined {
+  return get(servers).find(s => s.url === url)?.token;
+}
+
+// Append ?auth=<token> to an HTTP or WS URL when the server has a token.
+export function withAuth(url: string, serverUrl: string): string {
+  const token = serverToken(serverUrl);
+  if (!token) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(token);
 }
 
 export function removeServer(url: string) {
