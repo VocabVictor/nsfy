@@ -2,15 +2,16 @@
   import {
     servers, topics, addServer, removeServer,
     popupOnNotify, popupPosition, setPopupOnNotify, setPopupPosition,
+    layoutMode, setLayoutMode,
     type PopupPosition,
   } from './stores/nsfy';
 
   const positions: { value: PopupPosition; label: string }[] = [
-    { value: 'top-left', label: 'Top left' },
-    { value: 'top-right', label: 'Top right' },
-    { value: 'bottom-left', label: 'Bottom left' },
-    { value: 'bottom-right', label: 'Bottom right' },
-    { value: 'center', label: 'Center' },
+    { value: 'top-left', label: '左上' },
+    { value: 'top-right', label: '右上' },
+    { value: 'bottom-left', label: '左下' },
+    { value: 'bottom-right', label: '右下' },
+    { value: 'center', label: '居中' },
   ];
 
   let newUrl = $state('');
@@ -29,43 +30,62 @@
 
   function confirmRemove(url: string, name: string) {
     const count = $topics.filter(t => t.server === url).length;
-    const extra = count > 0 ? ` and its ${count} subscribed topic(s)` : '';
-    if (confirm(`Remove server "${name}"${extra}? This can't be undone.`)) {
+    const extra = count > 0 ? `及其 ${count} 个已订阅主题` : '';
+    if (confirm(`移除服务器「${name}」${extra}?此操作不可撤销。`)) {
       removeServer(url);
     }
   }
 </script>
 
 <div class="page">
-  <header>
-    <h1>Settings</h1>
-    <button class="add-btn" onclick={() => showAdd = !showAdd}>+</button>
-  </header>
-
-  {#if showAdd}
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="add-form" onkeydown={(e) => {
-      if (e.key === 'Escape') showAdd = false;
-      if (e.key === 'Enter') submitAdd();
-    }}>
-      <input type="text" placeholder="Server name (e.g. Home VPS)" bind:value={newName} use:focusOnMount />
-      <input type="text" placeholder="http://host:port" bind:value={newUrl} />
-      <button class="btn-primary" disabled={!newUrl || !newName} onclick={submitAdd}>Add</button>
+  <div class="section">
+    <h2>布局</h2>
+    <div class="layout-row">
+      <button
+        class="layout-btn" class:active={$layoutMode === 'split'}
+        onclick={() => setLayoutMode('split')}
+      >
+        <span class="layout-name">分栏排版</span>
+        <span class="layout-desc">主题侧栏在左，右侧消息流</span>
+      </button>
+      <button
+        class="layout-btn" class:active={$layoutMode === 'timeline'}
+        onclick={() => setLayoutMode('timeline')}
+      >
+        <span class="layout-name">统一时间线</span>
+        <span class="layout-desc">单一收件箱，按日期分组</span>
+      </button>
     </div>
-  {/if}
+  </div>
 
   <div class="section">
-    <h2>Servers</h2>
+    <div class="section-head">
+      <h2>服务器</h2>
+      <button class="add-btn" onclick={() => showAdd = !showAdd} aria-label="添加服务器">+</button>
+    </div>
+
+    {#if showAdd}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="add-form" onkeydown={(e) => {
+        if (e.key === 'Escape') showAdd = false;
+        if (e.key === 'Enter') submitAdd();
+      }}>
+        <input type="text" placeholder="服务器名称（如:家里 VPS）" bind:value={newName} use:focusOnMount />
+        <input type="text" placeholder="http://host:port" bind:value={newUrl} />
+        <button class="btn-primary" disabled={!newUrl || !newName} onclick={submitAdd}>添加</button>
+      </div>
+    {/if}
+
     {#each $servers as s (s.url)}
       <div class="server-item">
         <div class="server-info">
           <div class="server-name">{s.name}</div>
           <div class="server-url">{s.url}</div>
           <div class="server-topics">
-            {$topics.filter(t => t.server === s.url).length} topic(s) subscribed
+            已订阅 {$topics.filter(t => t.server === s.url).length} 个主题
           </div>
         </div>
-        <button class="del-btn" onclick={() => confirmRemove(s.url, s.name)} aria-label="Remove server">
+        <button class="del-btn" onclick={() => confirmRemove(s.url, s.name)} aria-label="移除服务器">
           <svg viewBox="0 0 16 16" fill="none" width="13" height="13"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         </button>
       </div>
@@ -73,14 +93,14 @@
   </div>
 
   <div class="section">
-    <h2>Notifications</h2>
+    <h2>通知</h2>
     <label class="toggle-row">
       <input
         type="checkbox"
         checked={$popupOnNotify}
         onchange={(e) => setPopupOnNotify(e.currentTarget.checked)}
       />
-      <span>Show a banner window for high-priority messages</span>
+      <span>高优先级消息弹出横幅窗口</span>
     </label>
     {#if $popupOnNotify}
       <div class="position-grid">
@@ -98,10 +118,10 @@
   </div>
 
   <div class="section">
-    <h2>About nsfy</h2>
+    <h2>关于信鸽</h2>
     <div class="about">
-      <p>A minimal, high-performance pub-sub notification system.</p>
-      <p class="version">Desktop v0.1.0 · Server nsfyd v0.1.0</p>
+      <p>订阅主题，接收服务器推送。</p>
+      <p class="version">桌面端 v0.1.0 · 服务端 nsfyd v0.1.0</p>
     </div>
   </div>
 </div>
@@ -111,8 +131,19 @@
     display: flex; flex-direction: column; height: 100%;
     padding: 24px; max-width: 600px; margin: 0 auto; width: 100%;
   }
-  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-  header h1 { font-size: 18px; font-weight: 600; letter-spacing: -0.2px; color: var(--text-1); }
+  .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .section-head h2 { margin-bottom: 0; }
+  .layout-row { display: flex; gap: 8px; }
+  .layout-btn {
+    flex: 1; display: flex; flex-direction: column; gap: 3px; text-align: left;
+    padding: 12px 14px; border-radius: var(--r-lg); border: 1px solid var(--border);
+    background: var(--bg-2); cursor: pointer; font-family: inherit; transition: all 0.12s;
+  }
+  .layout-btn:hover { border-color: var(--border-strong); }
+  .layout-btn.active { border-color: var(--accent); background: var(--accent-dim); }
+  .layout-name { font-size: 13px; font-weight: 600; color: var(--text-1); }
+  .layout-btn.active .layout-name { color: var(--accent-hover); }
+  .layout-desc { font-size: 11px; color: var(--text-3); }
   .add-btn {
     width: 32px; height: 32px; border-radius: var(--r-md);
     border: 1px solid var(--border); background: var(--bg-2); color: var(--text-2);
