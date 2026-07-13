@@ -1,6 +1,7 @@
 package com.nsfy.app.data.repository
 
 import com.nsfy.app.data.db.AppDatabase
+import com.nsfy.app.data.db.MessageWithTopic
 import com.nsfy.app.data.model.*
 import kotlinx.coroutines.flow.Flow
 
@@ -30,6 +31,9 @@ class NsfyRepository(private val db: AppDatabase) {
     // Messages
     fun getMessages(topicId: String): Flow<List<MessageEntity>> =
         messageDao.getMessagesForTopic(topicId)
+
+    fun getAllMessagesWithTopic(): Flow<List<MessageWithTopic>> =
+        messageDao.getAllMessagesWithTopic()
 
     suspend fun saveMessage(serverUrl: String, topicName: String, msg: NsfyMessage) {
         val tid = topicId(serverUrl, topicName)
