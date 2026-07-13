@@ -1,14 +1,11 @@
 <script lang="ts">
   import {
-    topics, servers, activeTopic,
-    markRead, fmtTime, priorityColor, type Message
+    topics, activeTopic,
+    markRead, fmtTime, priorityColor, priorityLabel, type Message
   } from './stores/nsfy';
-
-  let { onback }: { onback: () => void } = $props();
 
   const topic = $derived($topics.find(t => t.name === $activeTopic));
   const serverUrl = $derived(topic?.server || '');
-  const serverName = $derived($servers.find(s => s.url === serverUrl)?.name || '');
 
   let newMsg = $state('');
   let replyTitle = $state('');
@@ -41,25 +38,18 @@
 </script>
 
 <div class="page">
-  <header class="detail-header">
-    <button class="back-btn" onclick={onback} aria-label="Back">
-      <svg viewBox="0 0 16 16" fill="none" width="15" height="15"><path d="M10 3 5 8l5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-    <div class="header-info">
-      <h1>{$activeTopic}</h1>
-      <span class="server-tag">{serverName}</span>
-    </div>
+  <div class="detail-toolbar">
     <div class="conn-status" class:online={topic?.connected}>
       <span class="conn-dot"></span>
-      {topic?.connected ? 'live' : 'offline'}
+      {topic?.connected ? '已连接' : '离线'}
     </div>
-  </header>
+  </div>
 
   <div class="msg-list">
     {#if !topic || topic.messages.length === 0}
       <div class="empty">
-        <p>No messages yet</p>
-        <p class="hint">Publish one below or wait for incoming</p>
+        <p>暂无消息</p>
+        <p class="hint">在下方发布，或等待服务器推送</p>
       </div>
     {:else}
       {#each topic.messages as msg (msg.id)}
@@ -69,7 +59,7 @@
             {#if msg.priority >= 4}
               <span class="msg-priority" style="color:{priorityColor(msg.priority)}">
                 <svg viewBox="0 0 12 12" fill="currentColor" width="11" height="11"><path d="M6.5 1 2 6.8h2.6L4 11l4.5-5.8H5.9L6.5 1Z"/></svg>
-                {msg.priority >= 5 ? 'urgent' : 'high'}
+                {priorityLabel(msg.priority)}
               </span>
             {/if}
           </div>
@@ -90,13 +80,13 @@
   </div>
 
   <div class="input-bar">
-    <input class="title-input" type="text" placeholder="Title (optional)" bind:value={replyTitle} />
+    <input class="title-input" type="text" placeholder="标题（可选）" bind:value={replyTitle} />
     <div class="msg-row">
       <input
-        class="msg-input" type="text" placeholder="Type a message..."
+        class="msg-input" type="text" placeholder="发送通知…"
         bind:value={newMsg} onkeydown={handleKeydown}
       />
-      <button class="send-btn" disabled={!newMsg.trim()} onclick={doPublish} aria-label="Send">
+      <button class="send-btn" disabled={!newMsg.trim()} onclick={doPublish} aria-label="发送">
         <svg viewBox="0 0 20 20" fill="none" width="17" height="17"><path d="M10 16V4M10 4L5 9M10 4l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
@@ -108,16 +98,7 @@
     display: flex; flex-direction: column; height: 100%;
     padding: 24px; max-width: 700px; margin: 0 auto; width: 100%;
   }
-  .detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
-  .back-btn {
-    width: 30px; height: 30px; border-radius: var(--r-md); border: 1px solid var(--border);
-    background: var(--bg-2); color: var(--text-2); cursor: pointer;
-    display: flex; align-items: center; justify-content: center; font-family: inherit; transition: all 0.12s;
-  }
-  .back-btn:hover { background: var(--bg-3); color: var(--text-1); border-color: var(--border-strong); }
-  .header-info { flex: 1; }
-  .header-info h1 { font-size: 16px; font-weight: 600; letter-spacing: -0.2px; color: var(--text-1); }
-  .server-tag { font-size: 11px; color: var(--text-3); }
+  .detail-toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
   .conn-status { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 5px; }
   .conn-status.online { color: var(--success); }
   .conn-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-4); }
