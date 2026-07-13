@@ -9,12 +9,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.nsfy.app.service.WebSocketService
 import com.nsfy.app.ui.screens.NsfyMainScreen
+import com.nsfy.app.ui.theme.NsfyTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -43,7 +42,7 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme()) {
+            NsfyTheme {
                 NsfyMainScreen(modifier = Modifier.fillMaxSize())
             }
         }

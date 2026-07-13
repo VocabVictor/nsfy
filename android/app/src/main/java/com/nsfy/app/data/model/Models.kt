@@ -63,18 +63,32 @@ fun fmtTime(ts: Long): String {
     val msgTime = ts * 1000
     val diff = now - msgTime
     return when {
-        diff < 60_000 -> "just now"
-        diff < 3600_000 -> "${diff / 60_000}m ago"
-        diff < 86400_000 -> "${diff / 3600_000}h ago"
+        diff < 60_000 -> "刚刚"
+        diff < 3600_000 -> "${diff / 60_000} 分钟前"
+        diff < 86400_000 -> "${diff / 3600_000} 小时前"
         else -> {
-            val fmt = SimpleDateFormat("MMM d HH:mm", Locale.getDefault())
+            val fmt = SimpleDateFormat("M月d日 HH:mm", Locale.CHINA)
             fmt.format(Date(msgTime))
         }
     }
 }
 
-fun priorityEmoji(p: Int): String = when {
-    p >= 5 -> "⚡⚡"
-    p >= 4 -> "⚡"
-    else -> ""
+// Which calendar bucket a timestamp falls into, for the timeline grouping.
+fun dateGroup(ts: Long): String {
+    val cal = java.util.Calendar.getInstance()
+    val today = cal.get(java.util.Calendar.YEAR) * 1000 + cal.get(java.util.Calendar.DAY_OF_YEAR)
+    cal.timeInMillis = ts * 1000
+    val day = cal.get(java.util.Calendar.YEAR) * 1000 + cal.get(java.util.Calendar.DAY_OF_YEAR)
+    return when (today - day) {
+        0 -> "今天"
+        1 -> "昨天"
+        else -> "更早"
+    }
+}
+
+fun priorityLabel(p: Int): String = when {
+    p >= 5 -> "紧急"
+    p >= 4 -> "高"
+    p >= 3 -> "普通"
+    else -> "低"
 }
