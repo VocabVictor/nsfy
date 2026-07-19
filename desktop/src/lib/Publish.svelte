@@ -71,7 +71,7 @@
       <div class="topic-row">
         <select id="pub-server" aria-label="服务器" bind:value={serverUrl}>
           {#each $servers as s}
-            <option value={s.url}>{s.name} — {s.url}</option>
+            <option value={s.url}>{s.name}</option>
           {/each}
         </select>
         <input id="pub-topic" type="text" list="topic-list" placeholder="主题名" bind:value={topicName} />
