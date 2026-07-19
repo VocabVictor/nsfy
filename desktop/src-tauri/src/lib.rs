@@ -161,6 +161,39 @@ pub fn run() {
             save_shared_config,
         ])
         .setup(|app| {
+            #[cfg(desktop)]
+            {
+                use tauri_plugin_global_shortcut::{
+                    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
+                };
+
+                let shortcut = Shortcut::new(
+                    Some(Modifiers::CONTROL | Modifiers::ALT),
+                    Code::KeyD,
+                );
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(move |app, _, event| {
+                            if event.state() == ShortcutState::Released {
+                                if let Ok(mut settings) = config::load() {
+                                    settings.do_not_disturb = !settings.do_not_disturb;
+                                    if config::save(&settings).is_ok() {
+                                        if let Some(window) = app.get_webview_window("main") {
+                                            let script = format!(
+                                                "window.dispatchEvent(new CustomEvent('nsfy-dnd-changed',{{detail:{}}}))",
+                                                settings.do_not_disturb
+                                            );
+                                            let _ = window.eval(&script);
+                                        }
+                                    }
+                                }
+                            }
+                        })
+                        .build(),
+                )?;
+                let _ = app.global_shortcut().register(shortcut);
+            }
+
             let show_item = MenuItem::with_id(app, "show", "显示信鸽", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;

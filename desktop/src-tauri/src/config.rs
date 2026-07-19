@@ -15,6 +15,10 @@ pub struct StoredConfig {
     pub popup_position: String,
     #[serde(default = "default_layout_mode")]
     pub layout_mode: String,
+    #[serde(default = "default_window_behavior")]
+    pub window_behavior: String,
+    #[serde(default)]
+    pub do_not_disturb: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +49,8 @@ impl Default for StoredConfig {
             popup_on_notify: false,
             popup_position: default_popup_position(),
             layout_mode: default_layout_mode(),
+            window_behavior: default_window_behavior(),
+            do_not_disturb: false,
         }
     }
 }
@@ -158,6 +164,10 @@ fn default_popup_position() -> String {
 
 fn default_layout_mode() -> String {
     "split".into()
+}
+
+fn default_window_behavior() -> String {
+    "resident".into()
 }
 
 fn format_path_error(path: &Path, error: std::io::Error) -> String {

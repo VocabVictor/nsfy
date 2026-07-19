@@ -1,17 +1,18 @@
 <script lang="ts">
   import './app.css';
   import { get } from 'svelte/store';
-  import { invoke } from '@tauri-apps/api/core';
-  import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
+  import { onMount } from 'svelte';
+  import { isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
   import TopicDetail from './lib/TopicDetail.svelte';
   import PublishView from './lib/Publish.svelte';
   import Settings from './lib/Settings.svelte';
   import Timeline from './lib/Timeline.svelte';
   import MessageActions from './lib/MessageActions.svelte';
+  import { handleIncomingNotification } from './lib/message-notifications';
   import {
-    topics, servers, activeTopic, layoutMode, popupOnNotify, popupPosition,
+    topics, servers, activeTopic, layoutMode,
     loadState, addTopic, removeTopic, addMessage, setConnected,
-    fmtTime, topicColor, serverToken, normalizeServerUrl,
+    topicColor, serverToken, normalizeServerUrl, setDoNotDisturb,
   } from './lib/stores/nsfy';
 
   let ready = $state(false);
@@ -37,6 +38,12 @@
   const sockets = new Map<string, WebSocket>();
   let notifyPermission = $state(false);
 
+  onMount(() => {
+    const syncDnd = (event: Event) => setDoNotDisturb((event as CustomEvent<boolean>).detail);
+    window.addEventListener('nsfy-dnd-changed', syncDnd);
+    return () => window.removeEventListener('nsfy-dnd-changed', syncDnd);
+  });
+
   (async () => {
     notifyPermission = await isPermissionGranted();
     if (!notifyPermission) {
@@ -48,10 +55,12 @@
     const key = `${server}/${name}`;
     if (sockets.has(key)) return;
     try {
+      let connectedAt = Date.now() / 1000;
       const base = normalizeServerUrl(server);
       const url = base.replace(/^http/, 'ws') + `/${name}/ws`;
       const ws = new WebSocket(url);
       ws.onopen = () => {
+        connectedAt = Date.now() / 1000;
         const token = serverToken(server);
         if (token) ws.send(JSON.stringify({ type: 'auth', token }));
         setConnected(name, server, true);
@@ -72,38 +81,7 @@
           const msg = JSON.parse(e.data);
           if (!Array.isArray(msg.category)) msg.category = [];
           addMessage(name, server, msg);
-          if (msg.priority >= 4) {
-            // Native OS notification, seen even while the window is
-            // hidden in the tray.
-            if (notifyPermission) {
-              sendNotification({ title: msg.title || name, body: msg.message });
-            }
-            // Optional compact notification-center window, on top of
-            // everything, at whichever corner the user picked in Settings.
-            if (get(popupOnNotify)) {
-              // Latest high-priority message per topic, newest first, max 3.
-              const recent = get(topics)
-                .flatMap(t => {
-                  const hi = t.messages.filter(m => m.priority >= 4);
-                  return hi.length ? [{ ...hi[hi.length - 1], topicName: t.name }] : [];
-                })
-                .sort((a, b) => b.time - a.time)
-                .slice(0, 3)
-                .map(m => ({
-                  title: m.title || m.topicName,
-                  body: m.message,
-                  time: m.time,
-                  priority: m.priority,
-                }));
-              invoke('show_notification_popup', {
-                messages: recent.length ? recent : [{
-                  title: msg.title || name, body: msg.message,
-                  time: msg.time, priority: msg.priority,
-                }],
-                position: get(popupPosition),
-              }).catch(() => {});
-            }
-          }
+          handleIncomingNotification(name, msg, notifyPermission, msg.time >= connectedAt - 2);
         } catch {}
       };
       sockets.set(key, ws);

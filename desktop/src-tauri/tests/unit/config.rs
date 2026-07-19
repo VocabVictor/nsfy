@@ -16,3 +16,10 @@ fn rejects_remote_cleartext_and_url_credentials() {
     );
     assert!(normalize_url("https://token@example.com").is_err());
 }
+
+#[test]
+fn legacy_config_defaults_to_resident_notifications() {
+    let config: StoredConfig = serde_json::from_str(r#"{"servers":[],"topics":[]}"#).unwrap();
+    assert_eq!(config.window_behavior, "resident");
+    assert!(!config.do_not_disturb);
+}

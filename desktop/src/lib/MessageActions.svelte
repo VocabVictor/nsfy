@@ -1,7 +1,8 @@
 <script lang="ts">
   import {
-    clearAllMessages, discardTrash, emptyTrash, markAllRead,
+    clearAllMessages, discardTrash, doNotDisturb, emptyTrash, markAllRead,
     restoreTrashMessages, topics, trash, trashRef, type TrashMessage,
+    toggleDoNotDisturb,
   } from './stores/nsfy';
 
   let showTrash = $state(false);
@@ -32,6 +33,9 @@
 </script>
 
 <div class="actions">
+  <button class:active={$doNotDisturb} title="快捷键：Ctrl+Alt+D" onclick={toggleDoNotDisturb}>
+    {$doNotDisturb ? '勿扰中' : '勿扰'}
+  </button>
   <button disabled={unread === 0} onclick={markAllRead}>全部已读</button>
   <button onclick={() => showTrash = true}>回收站{#if $trash.length} {$trash.length}{/if}</button>
   <button class="clear" disabled={messageCount === 0} onclick={clearAll}>清空全部</button>
@@ -87,6 +91,7 @@
     cursor: pointer; white-space: nowrap;
   }
   button:hover:not(:disabled) { background: var(--bg-3); color: var(--text-1); }
+  button.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent-hover); }
   button.clear:hover:not(:disabled), button.danger:hover:not(:disabled) {
     background: var(--danger-bg); border-color: rgba(239, 68, 68, 0.35); color: var(--danger);
   }

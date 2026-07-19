@@ -1,18 +1,10 @@
 <script lang="ts">
   import {
     servers, topics, addServer, removeServer, setServerToken,
-    popupOnNotify, popupPosition, setPopupOnNotify, setPopupPosition,
-    layoutMode, setLayoutMode,
-    type PopupPosition,
+    doNotDisturb, layoutMode, popupOnNotify, popupPosition, windowBehavior,
+    savePreferences, type LayoutMode, type PopupPosition, type WindowBehavior,
   } from './stores/nsfy';
-
-  const positions: { value: PopupPosition; label: string }[] = [
-    { value: 'top-left', label: '左上' },
-    { value: 'top-right', label: '右上' },
-    { value: 'bottom-left', label: '左下' },
-    { value: 'bottom-right', label: '右下' },
-    { value: 'center', label: '居中' },
-  ];
+  import NotificationSettings from './NotificationSettings.svelte';
 
   let newUrl = $state('');
   let newName = $state('');
@@ -21,6 +13,37 @@
   let addError = $state('');
   let editTokenUrl = $state<string | null>(null);
   let editTokenValue = $state('');
+  let draftLayout = $state<LayoutMode>('split');
+  let draftWindow = $state<WindowBehavior>('resident');
+  let draftDnd = $state(false);
+  let draftBanner = $state(false);
+  let draftPosition = $state<PopupPosition>('top-right');
+  let dirty = $state(false);
+  let saved = $state(false);
+
+  $effect(() => {
+    if (dirty) return;
+    draftLayout = $layoutMode;
+    draftWindow = $windowBehavior;
+    draftDnd = $doNotDisturb;
+    draftBanner = $popupOnNotify;
+    draftPosition = $popupPosition;
+  });
+
+  function changed() {
+    dirty = true;
+    saved = false;
+  }
+
+  function saveSettings() {
+    savePreferences({
+      layoutMode: draftLayout, windowBehavior: draftWindow,
+      doNotDisturb: draftDnd, popupOnNotify: draftBanner,
+      popupPosition: draftPosition,
+    });
+    dirty = false;
+    saved = true;
+  }
 
   function focusOnMount(el: HTMLElement) {
     el.focus();
@@ -62,15 +85,15 @@
     <h2>布局</h2>
     <div class="layout-row">
       <button
-        class="layout-btn" class:active={$layoutMode === 'split'}
-        onclick={() => setLayoutMode('split')}
+        class="layout-btn" class:active={draftLayout === 'split'}
+        onclick={() => { draftLayout = 'split'; changed(); }}
       >
         <span class="layout-name">分栏排版</span>
         <span class="layout-desc">主题侧栏在左，右侧消息流</span>
       </button>
       <button
-        class="layout-btn" class:active={$layoutMode === 'timeline'}
-        onclick={() => setLayoutMode('timeline')}
+        class="layout-btn" class:active={draftLayout === 'timeline'}
+        onclick={() => { draftLayout = 'timeline'; changed(); }}
       >
         <span class="layout-name">统一时间线</span>
         <span class="layout-desc">单一收件箱，按日期分组</span>
@@ -129,30 +152,11 @@
     {/each}
   </div>
 
-  <div class="section">
-    <h2>通知</h2>
-    <label class="toggle-row">
-      <input
-        type="checkbox"
-        checked={$popupOnNotify}
-        onchange={(e) => setPopupOnNotify(e.currentTarget.checked)}
-      />
-      <span>高优先级消息弹出横幅窗口</span>
-    </label>
-    {#if $popupOnNotify}
-      <div class="position-grid">
-        {#each positions as p}
-          <button
-            class="pos-btn"
-            class:active={$popupPosition === p.value}
-            onclick={() => setPopupPosition(p.value)}
-          >
-            {p.label}
-          </button>
-        {/each}
-      </div>
-    {/if}
-  </div>
+  <NotificationSettings
+    bind:windowBehavior={draftWindow} bind:doNotDisturb={draftDnd}
+    bind:popupOnNotify={draftBanner} bind:popupPosition={draftPosition}
+    onchange={changed}
+  />
 
   <div class="section">
     <h2>关于信鸽</h2>
@@ -161,12 +165,17 @@
       <p class="version">桌面端 v0.1.0 · 服务端 nsfyd v0.1.0</p>
     </div>
   </div>
+
+  <div class="save-bar">
+    {#if saved}<span>设置已保存</span>{/if}
+    <button class="btn-primary" disabled={!dirty} onclick={saveSettings}>保存设置</button>
+  </div>
 </div>
 
 <style>
   .page {
     display: flex; flex-direction: column; height: 100%;
-    padding: 24px; max-width: 600px; margin: 0 auto; width: 100%;
+    padding: 24px; max-width: 600px; margin: 0 auto; width: 100%; overflow-y: auto;
   }
   .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
   .section-head h2 { margin-bottom: 0; }
@@ -208,23 +217,6 @@
     font-size: 11px; font-weight: 600; color: var(--text-3);
     text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
   }
-  .toggle-row {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 0; font-size: 13px; color: var(--text-2); cursor: pointer;
-  }
-  .toggle-row input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
-  .position-grid {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;
-    margin-top: 4px; margin-bottom: 8px;
-  }
-  .pos-btn {
-    padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--border);
-    background: var(--bg-2); color: var(--text-2); font-size: 12px; cursor: pointer;
-    font-family: inherit; transition: all 0.12s;
-  }
-  .pos-btn:hover { background: var(--bg-3); color: var(--text-1); }
-  .pos-btn.active { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
-  .pos-btn:last-child { grid-column: 1 / -1; }
   .server-item {
     display: flex; align-items: center; gap: 12px; padding: 12px 16px;
     background: var(--bg-2); border-radius: var(--r-lg); border: 1px solid var(--border); margin-bottom: 4px;
@@ -249,4 +241,10 @@
   .token-edit input:focus { border-color: var(--accent); }
   .about p { font-size: 13px; color: var(--text-2); }
   .version { margin-top: 4px; color: var(--text-4); font-size: 12px; }
+  .save-bar {
+    position: sticky; bottom: -24px; display: flex; justify-content: flex-end;
+    align-items: center; gap: 10px; margin-top: auto; padding: 14px 0 24px;
+    background: linear-gradient(transparent, var(--bg-1) 22%);
+  }
+  .save-bar span { color: var(--success); font-size: 12px; }
 </style>

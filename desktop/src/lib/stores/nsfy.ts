@@ -6,10 +6,15 @@ import {
   rememberRead, rememberReadSoon, type MessageRef,
 } from './message-state';
 import { initializeMessageState, moveToTrash, takeFromTrash, trashContains } from './trash-store';
+import {
+  doNotDisturb, layoutMode, popupOnNotify, popupPosition, windowBehavior,
+  setPreferencePersistence,
+} from './preferences';
 export { normalizeServerUrl } from '../server-url';
 export * from '../message-format';
 export { messageKey, type MessageRef, type TrashMessage } from './message-state';
 export { discardTrash, emptyTrash, trash, trashRef } from './trash-store';
+export * from './preferences';
 
 export interface Message {
   id: string;
@@ -42,16 +47,6 @@ export const topics = writable<Topic[]>([]);
 export const activeTopic = writable<string | null>(null);
 export const activeTab = writable<'topics' | 'publish' | 'settings'>('topics');
 
-export type PopupPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
-
-export const popupOnNotify = writable<boolean>(false);
-export const popupPosition = writable<PopupPosition>('top-right');
-
-// Layout direction: 1a 分栏排版 (sidebar topic list + message stream) vs
-// 1b 统一时间线 (single inbox + date grouping, topic as label).
-export type LayoutMode = 'split' | 'timeline';
-export const layoutMode = writable<LayoutMode>('split');
-
 export async function loadState() {
   initializeMessageState();
   const raw = localStorage.getItem('nsfy-state');
@@ -77,6 +72,10 @@ export async function loadState() {
   if (typeof data?.popupOnNotify === 'boolean') popupOnNotify.set(data.popupOnNotify);
   if (typeof data?.popupPosition === 'string') popupPosition.set(data.popupPosition);
   if (data?.layoutMode === 'split' || data?.layoutMode === 'timeline') layoutMode.set(data.layoutMode);
+  if (data?.windowBehavior === 'popup' || data?.windowBehavior === 'resident') {
+    windowBehavior.set(data.windowBehavior);
+  }
+  if (typeof data?.doNotDisturb === 'boolean') doNotDisturb.set(data.doNotDisturb);
   if (get(servers).length === 0) {
     servers.set([{ url: 'http://localhost:8080', name: 'Local' }]);
   }
@@ -92,11 +91,14 @@ export function persistState() {
     popupOnNotify: get(popupOnNotify),
     popupPosition: get(popupPosition),
     layoutMode: get(layoutMode),
+    windowBehavior: get(windowBehavior),
+    doNotDisturb: get(doNotDisturb),
   };
   localStorage.setItem('nsfy-state', JSON.stringify(state));
   invoke('save_shared_config', { config: state }).catch(() => {});
 }
 
+setPreferencePersistence(persistState);
 export function addTopic(server: string, name: string) {
   topics.update(ts => {
     if (ts.find(t => t.server === server && t.name === name)) return ts;
@@ -281,20 +283,5 @@ export function authHeaders(serverUrl: string): Record<string, string> {
 export function removeServer(url: string) {
   servers.update(s => s.filter(x => x.url !== url));
   topics.update(ts => ts.filter(t => t.server !== url));
-  persistState();
-}
-
-export function setPopupOnNotify(value: boolean) {
-  popupOnNotify.set(value);
-  persistState();
-}
-
-export function setPopupPosition(value: PopupPosition) {
-  popupPosition.set(value);
-  persistState();
-}
-
-export function setLayoutMode(value: LayoutMode) {
-  layoutMode.set(value);
   persistState();
 }
