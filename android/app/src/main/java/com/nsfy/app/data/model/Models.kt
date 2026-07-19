@@ -5,6 +5,8 @@ import androidx.room.PrimaryKey
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.net.URI
+import okhttp3.Request
 
 // --- API models ---
 data class NsfyMessage(
@@ -14,6 +16,7 @@ data class NsfyMessage(
     val message: String = "",
     val priority: Int = 3,
     val tags: List<String> = emptyList(),
+    val category: List<String> = emptyList(),
 )
 
 data class PublishRequest(
@@ -21,6 +24,7 @@ data class PublishRequest(
     val message: String,
     val priority: Int = 3,
     val tags: List<String> = emptyList(),
+    val category: List<String> = emptyList(),
 )
 
 data class ServerStats(
@@ -49,6 +53,7 @@ data class MessageEntity(
     val message: String,
     val priority: Int,
     val tags: String,  // comma-separated
+    val category: String = "[]",
 )
 
 // --- Server config ---
@@ -58,13 +63,42 @@ data class ServerConfig(
 )
 
 // --- Auth ---
-// Append ?auth=<token> when a token is stored for the server (prefs key
-// server_token_<url>). Works for both http and ws URLs.
-fun withAuth(url: String, serverUrl: String, prefs: android.content.SharedPreferences): String {
-    val token = prefs.getString("server_token_$serverUrl", null)?.takeIf { it.isNotBlank() }
-        ?: return url
-    val sep = if (url.contains('?')) '&' else '?'
-    return "$url${sep}auth=${java.net.URLEncoder.encode(token, "UTF-8")}"
+fun authenticated(
+    builder: Request.Builder,
+    serverUrl: String,
+    prefs: android.content.SharedPreferences,
+    overrideToken: String? = null,
+): Request.Builder {
+    normalizeServerUrl(serverUrl)
+    val token = overrideToken?.takeIf { it.isNotBlank() }
+        ?: prefs.getString("server_token_$serverUrl", null)?.takeIf { it.isNotBlank() }
+    return if (token == null) builder else builder.header("Authorization", "Bearer $token")
+}
+
+fun normalizeServerUrl(value: String): String {
+    val text = value.trim().trimEnd('/')
+    val uri = try {
+        URI(text)
+    } catch (_: Exception) {
+        throw IllegalArgumentException("服务器地址无效")
+    }
+    require(uri.userInfo == null && uri.query == null && uri.fragment == null) {
+        "服务器地址不能包含凭据、查询参数或片段"
+    }
+    val host = uri.host?.lowercase()?.trim('[', ']')
+        ?: throw IllegalArgumentException("服务器地址缺少主机")
+    val loopback = host == "localhost" || host == "::1" || isIpv4Loopback(host)
+    require(uri.scheme == "https" || uri.scheme == "http" && loopback) {
+        "远程服务器必须使用 HTTPS"
+    }
+    return text
+}
+
+private fun isIpv4Loopback(host: String): Boolean {
+    val parts = host.split('.')
+    return parts.size == 4 && parts[0] == "127" && parts.all {
+        it.toIntOrNull()?.let { value -> value in 0..255 } == true
+    }
 }
 
 // --- Formatting helpers ---
@@ -102,3 +136,12 @@ fun priorityLabel(p: Int): String = when {
     p >= 3 -> "普通"
     else -> "低"
 }
+
+fun categorySegments(value: String): List<String> = try {
+    val array = org.json.JSONArray(value)
+    (0 until array.length()).map { array.getString(it) }
+} catch (_: Exception) {
+    emptyList()
+}
+
+fun categoryPath(value: String): String = categorySegments(value).joinToString(" / ")

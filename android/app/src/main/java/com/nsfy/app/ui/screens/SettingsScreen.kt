@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nsfy.app.NsfyApp
+import com.nsfy.app.data.model.normalizeServerUrl
 
 data class ServerItem(val url: String, val name: String)
 
@@ -154,9 +155,10 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
     }
 
     if (showAddDialog) {
-        var newUrl by remember { mutableStateOf("http://") }
+        var newUrl by remember { mutableStateOf("https://") }
         var newName by remember { mutableStateOf("") }
         var newToken by remember { mutableStateOf("") }
+        var addError by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
@@ -170,6 +172,9 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    if (addError.isNotEmpty()) {
+                        Text(addError, color = MaterialTheme.colorScheme.error)
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = newName,
@@ -191,7 +196,13 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        servers = servers + ServerItem(newUrl, newName)
+                        val normalized = try {
+                            normalizeServerUrl(newUrl)
+                        } catch (error: IllegalArgumentException) {
+                            addError = error.message ?: "服务器地址无效"
+                            return@TextButton
+                        }
+                        servers = servers + ServerItem(normalized, newName)
                         prefs.edit().apply {
                             val urls = servers.map { it.url }.toSet()
                             putStringSet("servers", urls)
@@ -199,7 +210,7 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
                                 putString("server_name_${s.url}", s.name)
                             }
                             if (newToken.isNotBlank()) {
-                                putString("server_token_$newUrl", newToken.trim())
+                                putString("server_token_$normalized", newToken.trim())
                             }
                             apply()
                         }

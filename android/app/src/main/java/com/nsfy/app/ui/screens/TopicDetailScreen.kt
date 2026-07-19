@@ -13,11 +13,9 @@ import androidx.compose.ui.unit.dp
 import com.nsfy.app.data.model.*
 import com.nsfy.app.data.repository.NsfyRepository
 import com.nsfy.app.NsfyApp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
 
@@ -35,6 +33,7 @@ fun TopicDetailScreen(
 
     var replyText by remember { mutableStateOf("") }
     var replyTitle by remember { mutableStateOf("") }
+    var replyCategory by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val client = remember { OkHttpClient() }
     val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -51,14 +50,17 @@ fun TopicDetailScreen(
             put("title", replyTitle)
             put("message", replyText)
             put("priority", 3)
+            put(
+                "category",
+                org.json.JSONArray(replyCategory.split('/').map { it.trim() }.filter { it.isNotEmpty() }),
+            )
         }
         val prefs = NsfyApp.instance.getSharedPreferences(
             PREFS_NAME, android.content.Context.MODE_PRIVATE
         )
-        val request = Request.Builder()
-            .url(com.nsfy.app.data.model.withAuth("${topic.serverUrl}/${topic.name}", topic.serverUrl, prefs))
-            .post(RequestBody.create(jsonMediaType, body.toString()))
-            .build()
+        val request = com.nsfy.app.data.model.authenticated(
+            Request.Builder().url("${topic.serverUrl}/${topic.name}"), topic.serverUrl, prefs,
+        ).post(body.toString().toRequestBody(jsonMediaType)).build()
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {}
             override fun onResponse(call: Call, response: Response) {
@@ -99,6 +101,14 @@ fun TopicDetailScreen(
                         value = replyTitle,
                         onValueChange = { replyTitle = it },
                         placeholder = { Text("标题（可选）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = replyCategory,
+                        onValueChange = { replyCategory = it },
+                        placeholder = { Text("分类，如 工作/Agent") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -181,7 +191,7 @@ fun MessageCard(msg: MessageEntity) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                if (msg.title.isNotEmpty()) {
+            if (msg.title.isNotEmpty()) {
                     Text(
                         msg.title,
                         style = MaterialTheme.typography.labelMedium,
@@ -204,6 +214,15 @@ fun MessageCard(msg: MessageEntity) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                     )
                 }
+            }
+            val category = categoryPath(msg.category)
+            if (category.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    category,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
             Spacer(modifier = Modifier.height(4.dp))
             Text(

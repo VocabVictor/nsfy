@@ -12,6 +12,8 @@ import androidx.compose.ui.unit.dp
 import com.nsfy.app.NsfyApp
 import com.nsfy.app.data.db.MessageWithTopic
 import com.nsfy.app.data.model.dateGroup
+import com.nsfy.app.data.model.categoryPath
+import com.nsfy.app.data.model.categorySegments
 import com.nsfy.app.data.model.fmtTime
 import com.nsfy.app.data.model.priorityLabel
 import com.nsfy.app.data.repository.NsfyRepository
@@ -26,12 +28,27 @@ fun TimelineScreen() {
     val rows by repo.getAllMessagesWithTopic().collectAsState(initial = emptyList())
 
     var filter by remember { mutableStateOf("all") }
+    var selectedCategory by remember { mutableStateOf("") }
+
+    val categories = remember(rows) {
+        rows.flatMap { row ->
+            val parts = categorySegments(row.msg.category)
+            (1..parts.size).map { depth -> parts.take(depth).joinToString("/") }
+        }.distinct().sorted()
+    }
 
     // Messages from the last hour count as fresh for the 未读 chip; per-message
     // read state is not tracked in the schema.
     val fresh = rows.count { System.currentTimeMillis() / 1000 - it.msg.time < 3600 }
-    val visible = if (filter == "all") rows
-        else rows.filter { System.currentTimeMillis() / 1000 - it.msg.time < 3600 }
+    val visible = (if (filter == "all") rows
+        else rows.filter { System.currentTimeMillis() / 1000 - it.msg.time < 3600 })
+        .filter { row ->
+            if (selectedCategory.isEmpty()) true
+            else {
+                val path = categorySegments(row.msg.category).joinToString("/")
+                path == selectedCategory || path.startsWith("$selectedCategory/")
+            }
+        }
 
     // Group into 今天 / 昨天 / 更早 preserving order.
     val grouped = mutableListOf<Pair<String, MutableList<MessageWithTopic>>>()
@@ -70,6 +87,14 @@ fun TimelineScreen() {
                     selected = filter == "unread",
                     onClick = { filter = "unread" },
                     label = { Text(if (fresh > 0) "未读 $fresh" else "未读") },
+                )
+            }
+            if (categories.isNotEmpty()) {
+                CategoryFilter(
+                    paths = categories,
+                    selected = selectedCategory,
+                    onSelected = { selectedCategory = it },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             }
 
@@ -166,6 +191,15 @@ private fun TimelineCard(row: MessageWithTopic) {
                     row.msg.title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
+                )
+            }
+            val category = categoryPath(row.msg.category)
+            if (category.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    category,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
             Spacer(modifier = Modifier.height(2.dp))

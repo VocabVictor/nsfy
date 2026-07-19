@@ -8,6 +8,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.nsfy.app.data.model.NsfyMessage
+import com.nsfy.app.data.model.normalizeServerUrl
 import com.nsfy.app.data.model.PublishRequest
 import com.nsfy.app.data.repository.NsfyRepository
 import kotlinx.coroutines.*
@@ -24,6 +25,7 @@ class WebSocketService : Service() {
     private lateinit var okHttp: OkHttpClient
     private lateinit var repository: NsfyRepository
     private var servers: List<Pair<String, String>> = emptyList() // url -> name
+    private var subscriptionJob: Job? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -42,20 +44,8 @@ class WebSocketService : Service() {
         val notification = buildNotification("nsfy running", "Waiting for connections...")
         startForeground(NOTIFICATION_ID, notification)
 
-        scope.launch {
-            // Ensure at least one default topic exists
-            try {
-                val db = AppDatabase.getInstance(this@WebSocketService)
-                val count = db.topicDao().getTopicCount()
-                android.util.Log.i("nsfy", "WebSocketService: topic count = $count")
-                if (count == 0) {
-                    android.util.Log.i("nsfy", "WebSocketService: auto-adding test topic")
-                    repository.addTopic("http://localhost:8419", "test")
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("nsfy", "auto-add topic failed: ${e.message}", e)
-            }
-
+        subscriptionJob?.cancel()
+        subscriptionJob = scope.launch {
             // Load servers and connect
             android.util.Log.i("nsfy", "WebSocketService: loading servers from prefs")
             val prefs = getSharedPreferences("nsfy_prefs", MODE_PRIVATE)
@@ -72,6 +62,10 @@ class WebSocketService : Service() {
             android.util.Log.i("nsfy", "WebSocketService: starting topic collection")
             repository.getAllTopics().collect { topicList ->
                 android.util.Log.i("nsfy", "WebSocketService: got ${topicList.size} topics")
+                val wanted = topicList.mapTo(mutableSetOf()) { "${it.serverUrl}/${it.name}" }
+                connections.keys.filterNot { it in wanted }.forEach { key ->
+                    connections.remove(key)?.close(1000, "topic unsubscribed")
+                }
                 for (topic in topicList) {
                     val key = "${topic.serverUrl}/${topic.name}"
                     android.util.Log.i("nsfy", "WebSocketService: topic ${topic.name} @ ${topic.serverUrl}, connected=${connections.containsKey(key)}")
@@ -90,16 +84,21 @@ class WebSocketService : Service() {
 
     private fun connectWs(serverUrl: String, topicName: String) {
         val prefs = getSharedPreferences("nsfy_prefs", MODE_PRIVATE)
-        val wsUrl = com.nsfy.app.data.model.withAuth(
-            serverUrl
-                .replace("http://", "ws://")
-                .replace("https://", "wss://") + "/$topicName/ws",
-            serverUrl, prefs,
-        )
+        val base = try {
+            normalizeServerUrl(serverUrl)
+        } catch (error: IllegalArgumentException) {
+            android.util.Log.e("nsfy", "Blocked insecure server URL: ${error.message}")
+            return
+        }
+        val wsUrl = base
+            .replace("http://", "ws://")
+            .replace("https://", "wss://") + "/$topicName/ws"
         val key = "$serverUrl/$topicName"
         android.util.Log.i("nsfy", "WebSocketService: connectWs to $topicName on $serverUrl")
 
-        val request = Request.Builder().url(wsUrl).build()
+        val request = com.nsfy.app.data.model.authenticated(
+            Request.Builder().url(wsUrl), base, prefs,
+        ).build()
         val ws = okHttp.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 android.util.Log.i("nsfy", "WS OPEN: $topicName on $serverUrl")
@@ -119,6 +118,9 @@ class WebSocketService : Service() {
                         message = json.optString("message", ""),
                         priority = json.optInt("priority", 3),
                         tags = json.optJSONArray("tags")?.let { arr ->
+                            (0 until arr.length()).map { arr.getString(it) }
+                        } ?: emptyList(),
+                        category = json.optJSONArray("category")?.let { arr ->
                             (0 until arr.length()).map { arr.getString(it) }
                         } ?: emptyList(),
                     )
@@ -227,6 +229,7 @@ class WebSocketService : Service() {
     }
 
     override fun onDestroy() {
+        subscriptionJob?.cancel()
         connections.values.forEach { it.close(1000, "service stopped") }
         connections.clear()
         scope.cancel()

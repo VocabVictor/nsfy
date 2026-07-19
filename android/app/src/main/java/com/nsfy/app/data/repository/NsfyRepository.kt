@@ -45,6 +45,7 @@ class NsfyRepository(private val db: AppDatabase) {
             message = msg.message,
             priority = msg.priority,
             tags = msg.tags.joinToString(","),
+            category = org.json.JSONArray(msg.category).toString(),
         )
         messageDao.insertMessage(entity)
         topicDao.updateLastMessage(tid, msg.time, msg.title.ifEmpty { msg.message })

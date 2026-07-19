@@ -94,6 +94,7 @@ dependencies {
 
     // OkHttp for WebSocket
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    testImplementation("junit:junit:4.13.2")
 
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")

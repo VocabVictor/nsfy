@@ -1,7 +1,5 @@
 package com.nsfy.app.ui.screens
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -13,7 +11,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import com.nsfy.app.data.model.normalizeServerUrl
 
 private val PRIORITY_OPTIONS = listOf(
     5 to "紧急",
@@ -26,45 +26,39 @@ private val PRIORITY_OPTIONS = listOf(
 @Composable
 fun PublishScreen() {
     val context = LocalContext.current
-    var serverUrl by remember { mutableStateOf("http://") }
+    var serverUrl by remember { mutableStateOf("https://") }
     var topicName by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    var categoryPath by remember { mutableStateOf("") }
     var priority by remember { mutableIntStateOf(3) }
-    var scheduleAt by remember { mutableStateOf("") }
-    var attachName by remember { mutableStateOf("") }
     var status by remember { mutableStateOf<String?>(null) }
     val client = remember { OkHttpClient() }
     val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
-    val filePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            var name = uri.lastPathSegment ?: "文件"
-            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-                val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                if (idx >= 0 && cursor.moveToFirst()) name = cursor.getString(idx)
-            }
-            attachName = name
-        }
-    }
-
     fun publish() {
         if (message.isBlank() || serverUrl.isBlank()) return
+        val normalized = try {
+            normalizeServerUrl(serverUrl)
+        } catch (error: IllegalArgumentException) {
+            status = error.message ?: "服务器地址无效"
+            return
+        }
         val t = topicName.ifBlank { "default" }
-        val tagList = if (attachName.isNotEmpty()) listOf("附件:$attachName") else emptyList()
         val body = JSONObject().apply {
             put("title", title)
             put("message", message)
             put("priority", priority)
-            put("tags", org.json.JSONArray(tagList))
+            put("tags", org.json.JSONArray())
+            put(
+                "category",
+                org.json.JSONArray(categoryPath.split('/').map { it.trim() }.filter { it.isNotEmpty() }),
+            )
         }
         val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
-        val request = Request.Builder()
-            .url(com.nsfy.app.data.model.withAuth("$serverUrl/$t", serverUrl, prefs))
-            .post(RequestBody.create(jsonMediaType, body.toString()))
-            .build()
+        val request = com.nsfy.app.data.model.authenticated(
+            Request.Builder().url("$normalized/$t"), normalized, prefs,
+        ).post(body.toString().toRequestBody(jsonMediaType)).build()
         status = "发布中…"
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: java.io.IOException) {
@@ -75,8 +69,7 @@ fun PublishScreen() {
                 if (response.isSuccessful) {
                     message = ""
                     title = ""
-                    attachName = ""
-                    scheduleAt = ""
+                    categoryPath = ""
                 }
             }
         })
@@ -104,7 +97,7 @@ fun PublishScreen() {
                 value = serverUrl,
                 onValueChange = { serverUrl = it },
                 label = { Text("服务器地址") },
-                placeholder = { Text("http://your-server:8080") },
+                placeholder = { Text("https://your-server.example") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -132,6 +125,14 @@ fun PublishScreen() {
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
             )
+            OutlinedTextField(
+                value = categoryPath,
+                onValueChange = { categoryPath = it },
+                label = { Text("多级分类") },
+                placeholder = { Text("工作/Agent/Codex") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Text("优先级", style = MaterialTheme.typography.labelMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PRIORITY_OPTIONS.forEach { (value, label) ->
@@ -141,20 +142,6 @@ fun PublishScreen() {
                         label = { Text(label) },
                     )
                 }
-            }
-            OutlinedTextField(
-                value = scheduleAt,
-                onValueChange = { scheduleAt = it },
-                label = { Text("定时发送") },
-                placeholder = { Text("如:今晚 20:00(留空立即发送)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedButton(
-                onClick = { filePicker.launch("*/*") },
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (attachName.isEmpty()) "附件:选择文件" else "附件:$attachName")
             }
             Button(
                 onClick = { publish() },

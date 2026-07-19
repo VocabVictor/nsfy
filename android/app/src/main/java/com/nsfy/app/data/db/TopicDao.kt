@@ -9,6 +9,9 @@ interface TopicDao {
     @Query("SELECT * FROM topics ORDER BY lastMessageTime DESC")
     fun getAllTopics(): Flow<List<TopicEntity>>
 
+    @Query("SELECT * FROM topics ORDER BY lastMessageTime DESC")
+    suspend fun getAllTopicsOnce(): List<TopicEntity>
+
     @Query("SELECT COUNT(*) FROM topics")
     suspend fun getTopicCount(): Int
 

@@ -13,6 +13,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.nsfy.app.data.model.TopicEntity
 import com.nsfy.app.data.model.fmtTime
+import com.nsfy.app.data.model.normalizeServerUrl
 import com.nsfy.app.data.repository.NsfyRepository
 import com.nsfy.app.ui.theme.topicColor
 import com.nsfy.app.NsfyApp
@@ -160,9 +161,10 @@ fun TopicCard(topic: TopicEntity, onClick: () -> Unit) {
 
 @Composable
 fun AddTopicDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
-    var server by remember { mutableStateOf("http://") }
+    var server by remember { mutableStateOf("https://") }
     var name by remember { mutableStateOf("") }
     var token by remember { mutableStateOf("") }
+    var errorMessage by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -176,6 +178,9 @@ fun AddTopicDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                if (errorMessage.isNotEmpty()) {
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error)
+                }
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = name,
@@ -197,12 +202,18 @@ fun AddTopicDialog(onDismiss: () -> Unit, onAdd: (String, String) -> Unit) {
         confirmButton = {
             TextButton(
                 onClick = {
+                    val normalized = try {
+                        normalizeServerUrl(server)
+                    } catch (error: IllegalArgumentException) {
+                        errorMessage = error.message ?: "服务器地址无效"
+                        return@TextButton
+                    }
                     if (token.isNotBlank()) {
                         NsfyApp.instance
                             .getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
-                            .edit().putString("server_token_$server", token.trim()).apply()
+                            .edit().putString("server_token_$normalized", token.trim()).apply()
                     }
-                    onAdd(server, name)
+                    onAdd(normalized, name)
                 },
                 enabled = server.isNotBlank() && name.isNotBlank(),
             ) {
