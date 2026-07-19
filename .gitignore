@@ -1,5 +1,8 @@
 # Rust
 server/target/
+slints/target/
+.release-packages/
+.performance-results/
 
 # Node
 desktop/node_modules/

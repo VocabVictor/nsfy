@@ -13,6 +13,8 @@ These apply to every sub-agent spawned in this repo. Break them, and the commit 
 ## Code
 
 - Read existing code before writing. Match naming, formatting, error handling style.
+- Hand-written source files must not exceed 300 lines. Split by responsibility before crossing the limit. Generated files and dependency lockfiles are exempt.
+- Run `pwsh -File scripts/check-source-lines.ps1` after source changes.
 - No comments that restate the code. Comments explain why, not what.
 - Log with `android.util.Log.i("nsfy", ...)` on Android, `info!()` on Rust server.
 - No dead code, no `TODO` without a date and reason, no commented-out blocks.
