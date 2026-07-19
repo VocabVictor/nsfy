@@ -1,10 +1,16 @@
-// Svelte stores for nsfy desktop
 import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { normalizeServerUrl } from '../server-url';
+import {
+  forgetDismissed, isMessageDismissed, isMessagePurged, isMessageRead, rememberDismissed,
+  rememberRead, rememberReadSoon, type MessageRef,
+} from './message-state';
+import { initializeMessageState, moveToTrash, takeFromTrash, trashContains } from './trash-store';
 export { normalizeServerUrl } from '../server-url';
+export * from '../message-format';
+export { messageKey, type MessageRef, type TrashMessage } from './message-state';
+export { discardTrash, emptyTrash, trash, trashRef } from './trash-store';
 
-// --- Types ---
 export interface Message {
   id: string;
   time: number;
@@ -13,6 +19,7 @@ export interface Message {
   priority: number;
   tags: string[];
   category: string[];
+  read: boolean;
 }
 
 export interface Topic {
@@ -30,7 +37,6 @@ export interface Server {
   token?: string;
 }
 
-// --- Stores ---
 export const servers = writable<Server[]>([]);
 export const topics = writable<Topic[]>([]);
 export const activeTopic = writable<string | null>(null);
@@ -38,9 +44,6 @@ export const activeTab = writable<'topics' | 'publish' | 'settings'>('topics');
 
 export type PopupPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
 
-// When true, a priority>=4 message also shows a small macOS-style banner
-// window at popupPosition, on top of everything, in addition to the
-// background OS notification — for whoever wants it impossible to miss.
 export const popupOnNotify = writable<boolean>(false);
 export const popupPosition = writable<PopupPosition>('top-right');
 
@@ -49,8 +52,8 @@ export const popupPosition = writable<PopupPosition>('top-right');
 export type LayoutMode = 'split' | 'timeline';
 export const layoutMode = writable<LayoutMode>('split');
 
-// --- Persistence ---
 export async function loadState() {
+  initializeMessageState();
   const raw = localStorage.getItem('nsfy-state');
   let localData: any = null;
   if (raw) {
@@ -68,7 +71,7 @@ export async function loadState() {
   if (data?.servers) servers.set(data.servers);
   if (data?.topics) {
     topics.set(data.topics.map((t: any) => ({
-      ...t, connected: false, unread: t.unread || 0, messages: [],
+      ...t, connected: false, unread: 0, messages: [],
     })));
   }
   if (typeof data?.popupOnNotify === 'boolean') popupOnNotify.set(data.popupOnNotify);
@@ -94,7 +97,6 @@ export function persistState() {
   invoke('save_shared_config', { config: state }).catch(() => {});
 }
 
-// --- Actions ---
 export function addTopic(server: string, name: string) {
   topics.update(ts => {
     if (ts.find(t => t.server === server && t.name === name)) return ts;
@@ -104,36 +106,141 @@ export function addTopic(server: string, name: string) {
 }
 
 export function removeTopic(server: string, name: string) {
+  const topic = get(topics).find(t => t.server === server && t.name === name);
+  if (topic) rememberDismissed(topic.messages.map(m => ({ server, topic: name, id: m.id })));
   topics.update(ts => ts.filter(t => !(t.server === server && t.name === name)));
   if (get(activeTopic) === name) activeTopic.set(null);
   persistState();
 }
 
 export function addMessage(topicName: string, server: string, msg: Message) {
+  const ref = { server, topic: topicName, id: msg.id };
+  if (isMessageDismissed(ref)) {
+    if (!isMessagePurged(ref) && !trashContains(ref)) moveToTrash([{
+      ...msg, read: true, server, topicName, deletedAt: Date.now(),
+    }]);
+    return;
+  }
+  if (get(activeTopic) === topicName && !isMessageRead(ref)) rememberReadSoon(ref);
   topics.update(ts => ts.map(t => {
     if (t.server !== server || t.name !== topicName) return t;
     if (t.messages.find(m => m.id === msg.id)) return t;
-    const msgs = [...t.messages, msg];
+    const read = isMessageRead(ref);
+    const msgs = [...t.messages, { ...msg, read }];
     if (msgs.length > 500) msgs.splice(0, msgs.length - 500);
-    const unread = get(activeTopic) === topicName ? t.unread : t.unread + 1;
+    const unread = read ? t.unread : t.unread + 1;
     return { ...t, messages: msgs, unread };
   }));
 }
 
-export function markRead(topicName: string) {
-  if (!get(topics).some(t => t.name === topicName && t.unread !== 0)) return;
-  topics.update(ts => ts.map(t =>
-    t.name === topicName ? { ...t, unread: 0 } : t
+export function markRead(topicName: string, server?: string) {
+  const matches = (t: Topic) => t.name === topicName && (!server || t.server === server);
+  const refs = get(topics).filter(matches).flatMap(t =>
+    t.messages.filter(m => !m.read).map(m => ({ server: t.server, topic: t.name, id: m.id }))
+  );
+  if (!refs.length && !get(topics).some(t => matches(t) && t.unread !== 0)) return;
+  rememberRead(refs);
+  topics.update(ts => ts.map(t => matches(t)
+    ? { ...t, unread: 0, messages: t.messages.map(m => ({ ...m, read: true })) }
+    : t
   ));
   persistState();
 }
 
 export function markAllRead() {
   if (!get(topics).some(t => t.unread !== 0)) return;
+  rememberRead(get(topics).flatMap(t =>
+    t.messages.filter(m => !m.read).map(m => ({ server: t.server, topic: t.name, id: m.id }))
+  ));
   topics.update(ts => ts.map(t =>
-    t.unread === 0 ? t : { ...t, unread: 0 }
+    t.unread === 0 ? t : { ...t, unread: 0, messages: t.messages.map(m => ({ ...m, read: true })) }
   ));
   persistState();
+}
+
+export function markMessagesRead(refs: MessageRef[]) {
+  const selected = new Set(refs.map(ref => `${ref.server}\n${ref.topic}\n${ref.id}`));
+  rememberRead(refs);
+  topics.update(ts => ts.map(t => {
+    let changed = 0;
+    const messages = t.messages.map(m => {
+      const chosen = selected.has(`${t.server}\n${t.name}\n${m.id}`);
+      if (!chosen || m.read) return m;
+      changed++;
+      return { ...m, read: true };
+    });
+    return changed ? { ...t, messages, unread: Math.max(0, t.unread - changed) } : t;
+  }));
+  persistState();
+}
+
+export function clearMessages(refs: MessageRef[]) {
+  const selected = new Set(refs.map(ref => `${ref.server}\n${ref.topic}\n${ref.id}`));
+  const deletedAt = Date.now();
+  moveToTrash(get(topics).flatMap(t => t.messages
+    .filter(m => selected.has(`${t.server}\n${t.name}\n${m.id}`))
+    .map(m => ({ ...m, server: t.server, topicName: t.name, deletedAt }))
+  ));
+  rememberDismissed(refs);
+  topics.update(ts => ts.map(t => {
+    const removed = t.messages.filter(m => selected.has(`${t.server}\n${t.name}\n${m.id}`));
+    if (!removed.length) return t;
+    const unreadRemoved = removed.filter(m => !m.read).length;
+    return {
+      ...t,
+      messages: t.messages.filter(m => !selected.has(`${t.server}\n${t.name}\n${m.id}`)),
+      unread: Math.max(0, t.unread - unreadRemoved),
+    };
+  }));
+  persistState();
+}
+
+export function clearTopicMessages(server: string, name: string) {
+  const topic = get(topics).find(t => t.server === server && t.name === name);
+  if (!topic) return;
+  moveToTrash(topic.messages.map(m => ({
+    ...m, server, topicName: name, deletedAt: Date.now(),
+  })));
+  rememberDismissed(topic.messages.map(m => ({ server, topic: name, id: m.id })));
+  topics.update(ts => ts.map(t => t.server === server && t.name === name
+    ? { ...t, messages: [], unread: 0 }
+    : t
+  ));
+  persistState();
+}
+
+export function clearAllMessages() {
+  const deletedAt = Date.now();
+  const refs = get(topics).flatMap(t =>
+    t.messages.map(m => ({ server: t.server, topic: t.name, id: m.id }))
+  );
+  moveToTrash(get(topics).flatMap(t => t.messages.map(m => ({
+    ...m, server: t.server, topicName: t.name, deletedAt,
+  }))));
+  rememberDismissed(refs);
+  topics.update(ts => ts.map(t => ({ ...t, messages: [], unread: 0 })));
+  persistState();
+}
+
+export function restoreTrashMessages(refs: MessageRef[]) {
+  const subscribed = get(topics);
+  const restorable = refs.filter(ref =>
+    subscribed.some(t => t.server === ref.server && t.name === ref.topic)
+  );
+  if (!restorable.length) return;
+  const restored = takeFromTrash(restorable);
+  forgetDismissed(restorable);
+  rememberRead(restorable);
+  topics.update(ts => ts.map(t => {
+    const messages = restored.filter(m => m.server === t.server && m.topicName === t.name);
+    if (!messages.length) return t;
+    const existing = new Set(t.messages.map(m => m.id));
+    const merged = [...t.messages, ...messages.filter(m => !existing.has(m.id)).map(m => ({
+      id: m.id, time: m.time, title: m.title, message: m.message,
+      priority: m.priority, tags: m.tags, category: m.category, read: true,
+    }))].sort((a, b) => a.time - b.time).slice(-500);
+    return { ...t, messages: merged };
+  }));
 }
 
 export function setConnected(topicName: string, server: string, connected: boolean) {
@@ -190,85 +297,4 @@ export function setPopupPosition(value: PopupPosition) {
 export function setLayoutMode(value: LayoutMode) {
   layoutMode.set(value);
   persistState();
-}
-
-// --- Formatting ---
-// Chinese relative time, matching the design mockup.
-export function fmtTime(ts: number): string {
-  const now = new Date();
-  const d = new Date(ts * 1000);
-  const diff = now.getTime() - d.getTime();
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)} 小时前`;
-  const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (sameDay(d, yesterday)) return `昨天 ${hm}`;
-  const dayDiff = Math.floor((now.getTime() - d.getTime()) / 86400_000);
-  if (dayDiff < 7) {
-    const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
-    return `${week} ${hm}`;
-  }
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
-}
-
-// Which calendar group a timestamp falls into, for the 1b timeline.
-export function dateGroup(ts: number): '今天' | '昨天' | '更早' {
-  const now = new Date();
-  const d = new Date(ts * 1000);
-  const sameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  if (sameDay(d, now)) return '今天';
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (sameDay(d, yesterday)) return '昨天';
-  return '更早';
-}
-
-export function priorityColor(p: number): string {
-  if (p >= 5) return '#ef4444';
-  if (p >= 4) return '#f97316';
-  if (p >= 3) return '#6b7280';
-  return '#9ca3af';
-}
-
-// Named priority label, matching the design (紧急/高/普通/低).
-export function priorityLabel(p: number): string {
-  if (p >= 5) return '紧急';
-  if (p >= 4) return '高';
-  if (p >= 3) return '普通';
-  return '低';
-}
-
-export function categoryOptions(messages: Message[]): { path: string; depth: number }[] {
-  const paths = new Set<string>();
-  for (const message of messages) {
-    for (let depth = 1; depth <= (message.category || []).length; depth++) {
-      paths.add(message.category.slice(0, depth).join('/'));
-    }
-  }
-  return [...paths]
-    .sort((a, b) => a.localeCompare(b, 'zh-CN'))
-    .map(path => ({ path, depth: path.split('/').length }));
-}
-
-export function matchesCategory(message: Message, selected: string): boolean {
-  if (!selected) return true;
-  const path = (message.category || []).join('/');
-  return path === selected || path.startsWith(`${selected}/`);
-}
-
-// Deterministic color for a topic, used as the topic dot/tag in 1b timeline
-// and the topic list. Stable per topic name, no schema change needed.
-const TOPIC_PALETTE = [
-  '#ef4444', '#f97316', '#f59e0b', '#22c55e',
-  '#14b8a6', '#0ea5e9', '#3b82f6', '#8b5cf6',
-];
-export function topicColor(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return TOPIC_PALETTE[h % TOPIC_PALETTE.length];
 }

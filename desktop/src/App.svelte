@@ -7,6 +7,7 @@
   import PublishView from './lib/Publish.svelte';
   import Settings from './lib/Settings.svelte';
   import Timeline from './lib/Timeline.svelte';
+  import MessageActions from './lib/MessageActions.svelte';
   import {
     topics, servers, activeTopic, layoutMode, popupOnNotify, popupPosition,
     loadState, addTopic, removeTopic, addMessage, setConnected,
@@ -253,6 +254,7 @@
             <span class="sub">订阅主题，接收服务器推送</span>
           {/if}
         </div>
+        <MessageActions />
         <button class="btn-primary publish-btn" onclick={() => showPublish = true}>发布</button>
       </header>
 

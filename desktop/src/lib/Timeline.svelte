@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     topics, activeTopic, layoutMode, markRead,
-    markAllRead,
+    markMessagesRead, clearMessages, messageKey,
     fmtTime, dateGroup, topicColor, priorityColor, priorityLabel,
     categoryOptions, matchesCategory,
     type Message,
@@ -11,6 +11,8 @@
 
   let filter = $state<'all' | 'unread'>('all');
   let selectedCategory = $state('');
+  let selecting = $state(false);
+  let selected = $state<string[]>([]);
 
   // Flatten all topics' messages into one stream, newest first.
   const items = $derived(
@@ -22,14 +24,13 @@
   const unreadCount = $derived($topics.reduce((n, t) => n + t.unread, 0));
   const categoryChoices = $derived(categoryOptions(items));
 
-  // Unread topics: those with unread > 0. Per-message read state is not
-  // tracked, so the unread filter shows messages from topics with unread.
-  const unreadTopics = $derived(new Set($topics.filter(t => t.unread > 0).map(t => t.name)));
-
   const visible = $derived(
-    (filter === 'all' ? items : items.filter(m => unreadTopics.has(m.topicName)))
+    (filter === 'all' ? items : items.filter(m => !m.read))
       .filter(m => matchesCategory(m, selectedCategory))
   );
+  const selectedSet = $derived(new Set(selected));
+  const selectedItems = $derived(visible.filter(item => selectedSet.has(itemKey(item))));
+  const allVisibleSelected = $derived(visible.length > 0 && selectedItems.length === visible.length);
 
   // Group into 今天 / 昨天 / 更早, preserving order.
   const groups = $derived.by(() => {
@@ -43,10 +44,46 @@
     return out;
   });
 
-  function openTopic(name: string) {
-    markRead(name);
+  function itemKey(item: TimelineItem) {
+    return messageKey({ server: item.server, topic: item.topicName, id: item.id });
+  }
+
+  function refs(items: TimelineItem[]) {
+    return items.map(item => ({ server: item.server, topic: item.topicName, id: item.id }));
+  }
+
+  function toggle(item: TimelineItem) {
+    const key = itemKey(item);
+    selected = selected.includes(key) ? selected.filter(value => value !== key) : [...selected, key];
+  }
+
+  function toggleAll() {
+    const visibleKeys = visible.map(itemKey);
+    selected = allVisibleSelected
+      ? selected.filter(key => !visibleKeys.includes(key))
+      : [...new Set([...selected, ...visibleKeys])];
+  }
+
+  function readSelected() {
+    markMessagesRead(refs(selectedItems));
+    selected = [];
+  }
+
+  function deleteSelected() {
+    if (selectedItems.length && confirm(`将选中的 ${selectedItems.length} 条消息移入回收站？`)) {
+      clearMessages(refs(selectedItems));
+      selected = [];
+    }
+  }
+
+  function openTopic(item: TimelineItem) {
+    if (selecting) {
+      toggle(item);
+      return;
+    }
+    markRead(item.topicName, item.server);
     $layoutMode = 'split';
-    $activeTopic = name;
+    $activeTopic = item.topicName;
   }
 
 </script>
@@ -64,8 +101,13 @@
       {/each}
     </select>
     <div class="spacer"></div>
-    {#if unreadCount > 0}
-      <button class="link-btn" onclick={markAllRead}>全部已读</button>
+    {#if selecting}
+      <button class="link-btn" onclick={toggleAll}>{allVisibleSelected ? '取消全选' : '全选'}</button>
+      <button class="link-btn" disabled={!selectedItems.length} onclick={readSelected}>已读所选</button>
+      <button class="link-btn danger" disabled={!selectedItems.length} onclick={deleteSelected}>移入回收站</button>
+      <button class="link-btn" onclick={() => { selecting = false; selected = []; }}>完成</button>
+    {:else}
+      <button class="link-btn" disabled={!visible.length} onclick={() => selecting = true}>批量管理</button>
     {/if}
   </div>
 
@@ -78,11 +120,22 @@
     {:else}
       {#each groups as g (g.label)}
         <div class="group-label">{g.label}</div>
-        {#each g.items as msg (msg.id)}
-          <div class="msg-card">
+        {#each g.items as msg (itemKey(msg))}
+          <div
+            class="msg-card" class:unread={!msg.read} class:selected={selectedSet.has(itemKey(msg))}
+            role="button" tabindex="0" onclick={() => openTopic(msg)}
+            onkeydown={(event) => { if (event.key === 'Enter' || event.key === ' ') openTopic(msg); }}
+          >
             <div class="msg-meta">
+              {#if selecting}
+                <input
+                  type="checkbox" checked={selectedSet.has(itemKey(msg))}
+                  aria-label={`选择 ${msg.title || msg.message}`}
+                  onclick={(event) => event.stopPropagation()} onchange={() => toggle(msg)}
+                />
+              {/if}
               <button class="topic-tag" style="color:{topicColor(msg.topicName)}"
-                onclick={() => openTopic(msg.topicName)}>
+                onclick={(event) => { event.stopPropagation(); openTopic(msg); }}>
                 <span class="tag-dot" style="background:{topicColor(msg.topicName)}"></span>
                 {msg.topicName}
               </button>
@@ -134,6 +187,8 @@
     font-size: 12px; cursor: pointer; font-family: inherit;
   }
   .link-btn:hover { text-decoration: underline; }
+  .link-btn:disabled { color: var(--text-4); cursor: default; text-decoration: none; }
+  .link-btn.danger { color: var(--danger); }
 
   .stream { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding-right: 4px; }
   .group-label {
@@ -148,6 +203,8 @@
     content-visibility: auto; contain-intrinsic-size: auto 72px;
   }
   .msg-card:hover { border-color: var(--border-strong); }
+  .msg-card.unread { border-left: 3px solid var(--accent); padding-left: 14px; }
+  .msg-card.selected { background: var(--accent-dim); border-color: var(--accent); }
   .msg-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
   .topic-tag {
     display: flex; align-items: center; gap: 5px;

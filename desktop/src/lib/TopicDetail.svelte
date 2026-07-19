@@ -1,7 +1,7 @@
 <script lang="ts">
   import {
     topics, activeTopic,
-    markRead, fmtTime, priorityColor, priorityLabel, authHeaders,
+    markRead, clearTopicMessages, fmtTime, priorityColor, priorityLabel, authHeaders,
     categoryOptions, matchesCategory,
   } from './stores/nsfy';
 
@@ -19,8 +19,14 @@
   );
 
   $effect(() => {
-    if ($activeTopic) markRead($activeTopic);
+    if ($activeTopic && topic) markRead($activeTopic, topic.server);
   });
+
+  function clearTopic() {
+    if (topic && confirm(`将「${topic.name}」的消息移入回收站？`)) {
+      clearTopicMessages(topic.server, topic.name);
+    }
+  }
 
   async function doPublish() {
     if (!newMsg.trim() || !serverUrl || !$activeTopic) return;
@@ -58,9 +64,12 @@
         <option value={item.path}>{'—'.repeat(item.depth - 1)} {item.path.split('/').at(-1)}</option>
       {/each}
     </select>
-    <div class="conn-status" class:online={topic?.connected}>
-      <span class="conn-dot"></span>
-      {topic?.connected ? '已连接' : '离线'}
+    <div class="toolbar-actions">
+      <button class="clear-btn" disabled={!topic?.messages.length} onclick={clearTopic}>清空本主题</button>
+      <div class="conn-status" class:online={topic?.connected}>
+        <span class="conn-dot"></span>
+        {topic?.connected ? '已连接' : '离线'}
+      </div>
     </div>
   </div>
 
@@ -129,6 +138,13 @@
     border: 1px solid var(--border); background: var(--bg-2); color: var(--text-2);
     font: inherit; font-size: 11px;
   }
+  .toolbar-actions { display: flex; align-items: center; gap: 12px; }
+  .clear-btn {
+    border: none; background: transparent; color: var(--text-3);
+    font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .clear-btn:hover:not(:disabled) { color: var(--danger); }
+  .clear-btn:disabled { color: var(--text-4); cursor: default; }
   .conn-status { font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 5px; }
   .conn-status.online { color: var(--success); }
   .conn-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-4); }
