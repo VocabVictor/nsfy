@@ -240,7 +240,7 @@
 
       <div class="main-body">
         {#if showSettings}
-          <Settings />
+          <Settings onsaved={() => showSettings = false} />
         {:else if $layoutMode === 'timeline'}
           <Timeline />
         {:else if $activeTopic}

@@ -6,6 +6,8 @@
   } from './stores/nsfy';
   import NotificationSettings from './NotificationSettings.svelte';
 
+  let { onsaved }: { onsaved?: () => void } = $props();
+
   let newUrl = $state('');
   let newName = $state('');
   let newToken = $state('');
@@ -20,7 +22,6 @@
   let draftNotificationMode = $state<NotificationMode>('system');
   let draftPosition = $state<PopupPosition>('top-right');
   let dirty = $state(false);
-  let saved = $state(false);
 
   $effect(() => {
     if (dirty) return;
@@ -34,7 +35,6 @@
 
   function changed() {
     dirty = true;
-    saved = false;
   }
 
   function saveSettings() {
@@ -45,7 +45,7 @@
       popupPosition: draftPosition,
     });
     dirty = false;
-    saved = true;
+    onsaved?.();
   }
 
   function focusOnMount(el: HTMLElement) {
@@ -171,7 +171,6 @@
   </div>
 
   <div class="save-bar">
-    {#if saved}<span>设置已保存</span>{/if}
     <button class="btn-primary" disabled={!dirty} onclick={saveSettings}>保存设置</button>
   </div>
 </div>
@@ -179,7 +178,7 @@
 <style>
   .page {
     display: flex; flex-direction: column; height: 100%;
-    padding: 24px; max-width: 600px; margin: 0 auto; width: 100%; overflow-y: auto;
+    padding: 24px; width: 100%; overflow-y: auto;
   }
   .section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
   .section-head h2 { margin-bottom: 0; }
@@ -250,5 +249,4 @@
     align-items: center; gap: 10px; margin-top: auto; padding: 14px 0 24px;
     background: linear-gradient(transparent, var(--bg-1) 22%);
   }
-  .save-bar span { color: var(--success); font-size: 12px; }
 </style>
