@@ -27,9 +27,9 @@ curl -d '{"title":"backup","message":"done"}'  \
                                                        │
 ┌──────────────────── nsfyd ────────────────────┐      │
 │  axum + dashmap + broadcast チャンネル         │      │
-│  1.2 MB バイナリ · アイドル ~7 MB · 10k 接続  │      │
+│  10k 接続を検証済み・詳細は PERFORMANCE.md     │      │
 └──────────────────────┬─────────────────────────┘      │
-                       │ ws://<topic>/ws                │
+                       │ wss://<topic>/ws               │
          ┌─────────────┼─────────────┐                  │
          ▼             ▼             ▼                  │
    ┌──────────┐ ┌──────────┐ ┌──────────┐              │
@@ -43,7 +43,7 @@ curl -d '{"title":"backup","message":"done"}'  \
 ```bash
 git clone https://github.com/VocabVictor/nsfy.git
 cd nsfy/server && cargo build --release
-./target/release/nsfyd --listen 0.0.0.0:8080
+./target/release/nsfyd --listen 127.0.0.1:8080 --db-path ./nsfy.db
 ```
 
 ```bash
@@ -73,7 +73,7 @@ curl http://localhost:8080/
 
 | コンポーネント | 技術 | サイズ |
 |---------------|------|--------|
-| サーバー | Rust + axum | 1.2 MB |
+| サーバー | Rust + axum | プラットフォーム依存 |
 | デスクトップ | Tauri + Svelte | 2.0 MB |
 | Android | Kotlin + Compose | 1.6 MB |
 

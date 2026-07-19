@@ -8,7 +8,7 @@
   <img src="https://img.shields.io/badge/desktop-Tauri-24c8a0?logo=tauri" />
   <img src="https://img.shields.io/badge/android-Kotlin-7f52ff?logo=kotlin" />
   <img src="https://img.shields.io/badge/minSdk-21-green?logo=android" />
-  <img src="https://img.shields.io/badge/size-3.1MB_server_|_1.6MB_apk-lightgrey" />
+  <img src="https://img.shields.io/badge/performance-full_suite_verified-lightgrey" />
 </p>
 
 ---
@@ -29,9 +29,9 @@ curl -d '{"title":"backup","message":"done"}'  \
                                                        │
 ┌──────────────────── nsfyd ────────────────────┐      │
 │  axum + dashmap + broadcast channels           │      │
-│  3.1 MB binary · ~7 MB idle · 10k connections  │      │
+│  Verified at 10k connections; see PERFORMANCE.md│      │
 └──────────────────────┬─────────────────────────┘      │
-                       │ ws://<topic>/ws                │
+                       │ wss://<topic>/ws               │
          ┌─────────────┼─────────────┐                  │
          ▼             ▼             ▼                  │
    ┌──────────┐ ┌──────────┐ ┌──────────┐              │
@@ -52,7 +52,7 @@ git clone https://github.com/VocabVictor/nsfy.git
 cd nsfy/server
 cargo build --release
 
-./target/release/nsfyd --listen 0.0.0.0:8080
+./target/release/nsfyd --listen 127.0.0.1:8080 --db-path ./nsfy.db
 ```
 
 systemd unit:
@@ -63,7 +63,7 @@ Description=nsfy
 After=network.target
 
 [Service]
-ExecStart=/opt/nsfy/nsfyd --listen 0.0.0.0:8080
+ExecStart=/opt/nsfy/nsfyd --listen 127.0.0.1:8080 --db-path /var/lib/nsfy/nsfy.db
 Restart=always
 RestartSec=5
 
@@ -72,6 +72,10 @@ WantedBy=multi-user.target
 ```
 
 ### Publish
+
+The HTTP URL below is only for same-machine loopback testing. LAN, public, and
+all other non-loopback servers must use `https://`; live subscriptions must use
+`wss://`. The server and every client reject remote cleartext connections.
 
 ```bash
 curl -X POST http://localhost:8080/alerts \
@@ -82,7 +86,7 @@ curl -X POST http://localhost:8080/alerts \
 ### Subscribe
 
 ```bash
-# WebSocket — real-time, bidirectional
+# WebSocket — real-time read-only subscription; publish with HTTPS POST
 websocat ws://localhost:8080/alerts/ws
 
 # SSE — browser-friendly
@@ -129,6 +133,9 @@ Priority runs 1 (low) through 5 (critical). Tags are free-form strings — filte
 ```bash
 ./target/release/nsfyd \
   --listen 0.0.0.0:8080 \
+  --db-path /var/lib/nsfy/nsfy.db \
+  --tls-cert /etc/nsfy/fullchain.pem \
+  --tls-key /etc/nsfy/private-key.pem \
   --auth-token "$(openssl rand -hex 32)" \
   --rate-limit-per-min 300 \
   --max-topics 10000
@@ -136,9 +143,11 @@ Priority runs 1 (low) through 5 (critical). Tags are free-form strings — filte
 
 | Flag / env | Default | What it does |
 |---|---|---|
-| `--auth-token` / `NSFY_AUTH_TOKEN` | none | When set, every route — including `/` — requires it. Pass it as `Authorization: Bearer <token>` (preferred, doesn't leak into access logs) or `?auth=<token>`. Compared in constant time so a wrong guess can't be timed. |
+| `--auth-token` / `NSFY_AUTH_TOKEN` | optional on loopback | Authenticate with `Authorization: Bearer <token>`. URL query tokens are rejected. Non-loopback listeners require a token. |
 | `--rate-limit-per-min` / `NSFY_RATE_LIMIT_PER_MIN` | 300 | Per-IP token bucket covering HTTP requests and WS-originated publishes alike. Over budget → `429`. |
 | `--max-topics` / `NSFY_MAX_TOPICS` | 10000 | Caps how many distinct topics the server will track at once, so an unauthenticated caller can't grow the topic table without bound. Over the cap → `503` for new topic names. |
+| `--cache-size` / `NSFY_CACHE_SIZE` | 100 | Recent messages retained in memory per topic for poll and stream replay. |
+| `--stream-buffer-size` / `NSFY_STREAM_BUFFER_SIZE` | 256 | Pending live messages tolerated for a temporarily slow WS/SSE reader. Raise it for unusually bursty topics; larger values reserve more memory per active topic. |
 | `--max-msg-size` / `NSFY_MAX_MSG_SIZE` | 65536 | Enforced both on the raw HTTP body and on the `message` field (also bounds WS frame/message size). `title` is capped at 512 bytes, tags at 32 entries of 64 bytes each. |
 | `--topic-rate-limit-per-min` / `NSFY_TOPIC_RATE_LIMIT_PER_MIN` | 1200 | Aggregate publish budget per topic, across all IPs — catches a distributed flood aimed at one topic that per-IP limiting alone won't. |
 | `--max-conns-per-ip` / `NSFY_MAX_CONNS_PER_IP` | 20 | Concurrent WS/SSE connections allowed per IP. Each connection only costs one request against the rate limiter, so this caps the separate cost of holding sockets open. |
@@ -149,32 +158,32 @@ Priority runs 1 (low) through 5 (critical). Tags are free-form strings — filte
 
 Topic names are restricted to `[A-Za-z0-9._-]`, max 128 characters — long enough for anything reasonable, and it keeps control characters out of log lines. Invalid names get a `400`.
 
-If you run without `--auth-token`, the topic name is your only secret — pick something unguessable (`curl .../$(openssl rand -hex 16)`), same as ntfy.sh's model. Once you set a token, `/` also requires it, so topic names can't be enumerated by an outsider.
+Running without `--auth-token` is limited to loopback development. Any listener reachable by other devices requires a token.
 
 A panic in one request's handler is caught and turned into a `500` — it can't take the whole process (and every other client's connection) down with it.
 
 ## Persistence
 
-By default nsfyd is pure in-memory: restart the process and every topic's message cache is gone. That's fine for most uses (subscribers usually just want *new* messages), but if you want history to survive a restart, point it at a database file:
+nsfyd always uses SQLite. The default path is `nsfy.db`; production deployments should set an explicit path:
 
 ```bash
 ./target/release/nsfyd --db-path /var/lib/nsfy/nsfy.db
 ```
 
-SQLite support is built into every binary (that's most of the jump from 1.2 MB to 3.1 MB) — leaving `--db-path` unset is all it takes to stay in-memory-only, no separate build needed.
+SQLite runs in WAL mode with `synchronous=FULL`. Concurrent queued publishes share a bounded transaction, but every request still succeeds only after that shared transaction commits. Database open, migration, or load failures stop startup instead of silently falling back to memory.
 
 | Flag / env | Default | What it does |
 |---|---|---|
-| `--db-path` / `NSFY_DB_PATH` | none | SQLite file to persist messages to. Unset = in-memory only (today's behavior). |
+| `--db-path` / `NSFY_DB_PATH` | `nsfy.db` | Required SQLite database path. |
 | `--db-keep-per-topic` / `NSFY_DB_KEEP_PER_TOPIC` | `--cache-size` | How many messages to retain **per topic** in the database — same ring-buffer trimming as the in-memory cache, just on disk. This is a hard bound, not "keep everything forever": every insert prunes that topic back down to this count in the same transaction. |
 
 **This does not retain unbounded history.** Worst-case total rows on disk is bounded by `--max-topics × --db-keep-per-topic` (10000 × 100 = 1,000,000 rows by default) — size those two flags for your actual traffic, not their defaults, if you're persisting to a small disk. Each topic is capped independently, so one busy topic can't crowd out another's retention.
 
-On startup, if `--db-path` is set, nsfyd loads each topic's most recent messages back into memory before it starts accepting connections — so a restart replays exactly what a fresh subscriber would already see via `/:topic/json`, `/:topic/ws`, or `/:topic/sse`, no more.
+On startup, nsfyd loads each topic's most recent messages before accepting connections.
 
 ### TLS
 
-`nsfyd` speaks plain HTTP/WS, no TLS built in — that's a deliberate size tradeoff. Put a reverse proxy (nginx, Caddy, [Tailscale Serve](https://tailscale.com/kb/1312/serve)) in front for anything that crosses a network you don't control, otherwise the token and every message go out in cleartext.
+Use `--tls-cert` and `--tls-key` for built-in HTTPS/WSS. A non-loopback listener always refuses cleartext and there is no bypass flag. With a same-host TLS reverse proxy, bind nsfyd to loopback; loopback HTTP remains available only for local development and same-host proxy upstreams.
 
 If you do put a reverse proxy in front, pass `--trust-proxy` so rate limiting keys on the real client IP instead of the proxy's — but only if `nsfyd` itself isn't *also* reachable directly. If it is, a client can set its own `X-Forwarded-For` and dodge its rate limit entirely.
 
@@ -182,7 +191,7 @@ If you do put a reverse proxy in front, pass `--trust-proxy` so rate limiting ke
 
 | Piece | Stack | Size | Notes |
 |-------|-------|------|-------|
-| Server | Rust + axum | 3.1 MB | Single binary, one systemd line, SQLite persistence built in |
+| Server | Rust + axum | Platform-dependent | Single binary, one systemd line, SQLite persistence built in |
 | Desktop | Tauri + Svelte | 2.0 MB | System tray, native notifications |
 | Android | Kotlin + Compose | 1.6 MB | minSdk 21 — works on phones from 2014 |
 

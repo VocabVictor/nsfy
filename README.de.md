@@ -27,9 +27,9 @@ curl -d '{"title":"backup","message":"done"}'  \
                                                        │
 ┌──────────────────── nsfyd ────────────────────┐      │
 │  axum + dashmap + broadcast channels           │      │
-│  1.2 MB Binär · ~7 MB idle · 10k Verbindungen  │      │
+│  10k Verbindungen geprüft; siehe PERFORMANCE.md │      │
 └──────────────────────┬─────────────────────────┘      │
-                       │ ws://<topic>/ws                │
+                       │ wss://<topic>/ws               │
          ┌─────────────┼─────────────┐                  │
          ▼             ▼             ▼                  │
    ┌──────────┐ ┌──────────┐ ┌──────────┐              │
@@ -43,7 +43,7 @@ curl -d '{"title":"backup","message":"done"}'  \
 ```bash
 git clone https://github.com/VocabVictor/nsfy.git
 cd nsfy/server && cargo build --release
-./target/release/nsfyd --listen 0.0.0.0:8080
+./target/release/nsfyd --listen 127.0.0.1:8080 --db-path ./nsfy.db
 ```
 
 ```bash
