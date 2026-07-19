@@ -17,11 +17,15 @@ $extensions = [Collections.Generic.HashSet[string]]::new(
 )
 $ignoredPathPattern = '(^|[\\/])(node_modules|target|build|dist|gen|\.gradle)([\\/]|$)'
 $violations = [Collections.Generic.List[object]]::new()
-$rg = Get-Command rg -ErrorAction Stop | Select-Object -First 1
+$git = Get-Command git -ErrorAction Stop | Select-Object -First 1
+$trackedFiles = & $git.Source -C $repoRoot ls-files
+if ($LASTEXITCODE -ne 0) {
+    throw "无法读取 Git 跟踪文件列表。"
+}
 
 Push-Location $repoRoot
 try {
-    & $rg.Source --files | ForEach-Object {
+    $trackedFiles | ForEach-Object {
         $relativePath = $_
         if ($relativePath -match $ignoredPathPattern) {
             return

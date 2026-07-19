@@ -60,6 +60,7 @@ jobs:
           name: server-performance-${{ github.run_id }}
           path: .performance-results/*.log
           if-no-files-found: warn
+          include-hidden-files: true
           retention-days: 14
 
   tauri:

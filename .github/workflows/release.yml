@@ -45,6 +45,7 @@ jobs:
           name: server-package
           path: .release-packages/*
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
   windows:
@@ -69,6 +70,7 @@ jobs:
           name: windows-packages
           path: .release-packages/*
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
   unix-desktop:
@@ -137,6 +139,7 @@ jobs:
           name: desktop-${{ matrix.platform }}-packages
           path: .release-packages/*
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
   android:
@@ -183,6 +186,7 @@ jobs:
           name: android-package
           path: .release-packages/*
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 7
 
   release:

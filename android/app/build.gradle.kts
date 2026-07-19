@@ -20,9 +20,6 @@ android {
     }
 
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
-        }
         create("release") {
             // Local keystore.properties (gitignored); falls back to unsigned when absent
             val propsFile = rootProject.file("keystore.properties")
