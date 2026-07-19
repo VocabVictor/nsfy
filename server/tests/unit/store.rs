@@ -65,9 +65,7 @@ fn separate_topics_are_pruned_independently() {
 #[test]
 fn one_batch_prunes_each_topic_after_all_inserts() {
     let store = Store::open(":memory:").unwrap();
-    let messages: Vec<_> = (0..5)
-        .map(|i| msg(&format!("id{i}"), i, "body"))
-        .collect();
+    let messages: Vec<_> = (0..5).map(|i| msg(&format!("id{i}"), i, "body")).collect();
     let writes: Vec<_> = messages
         .iter()
         .map(|message| ("alerts", message, 3))

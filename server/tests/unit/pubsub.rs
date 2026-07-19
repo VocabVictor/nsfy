@@ -36,8 +36,6 @@ fn concurrent_creation_returns_one_shared_topic() {
         .into_iter()
         .map(|handle| handle.join().unwrap())
         .collect();
-    assert!(topics
-        .iter()
-        .all(|topic| Arc::ptr_eq(topic, &topics[0])));
+    assert!(topics.iter().all(|topic| Arc::ptr_eq(topic, &topics[0])));
     assert_eq!(ps.stats().topics, 1);
 }

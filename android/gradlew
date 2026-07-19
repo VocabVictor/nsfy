@@ -1,7 +1,8 @@
 #!/bin/sh
 # Minimal gradle wrapper
-export JAVA_HOME=/opt/homebrew/opt/openjdk@17
-export ANDROID_HOME="$HOME/android-sdk"
+: "${JAVA_HOME:=/opt/homebrew/opt/openjdk@17}"
+: "${ANDROID_HOME:=$HOME/android-sdk}"
+export JAVA_HOME ANDROID_HOME
 GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
 GRADLE_VERSION="8.9"
 GRADLE_HOME="$GRADLE_USER_HOME/wrapper/dists/gradle-${GRADLE_VERSION}-bin"

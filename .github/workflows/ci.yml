@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-lines:
+    name: Source line limit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Enforce 300-line source limit
+        shell: pwsh
+        run: ./scripts/check-source-lines.ps1
+
+  server:
+    name: Server tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all --check
+        working-directory: server
+      - name: Run Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+        working-directory: server
+      - name: Run complete test suite
+        run: cargo test --locked --all-targets --no-fail-fast
+        working-directory: server
+      - name: Build release server
+        run: cargo build --release --locked
+        working-directory: server
+
+  server-performance:
+    name: Full server performance suite
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run full performance suite
+        shell: pwsh
+        run: ./server/scripts/run-performance.ps1
+      - name: Upload performance report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: server-performance-${{ github.run_id }}
+          path: .performance-results/*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  tauri:
+    name: Tauri desktop tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+        working-directory: desktop
+      - name: Build frontend
+        run: npm run build
+        working-directory: desktop
+      - name: Check formatting
+        run: cargo fmt --all --check
+        working-directory: desktop/src-tauri
+      - name: Run Rust tests
+        run: cargo test --locked --all-targets --no-fail-fast
+        working-directory: desktop/src-tauri
+      - name: Check desktop and CLI binaries
+        run: cargo check --locked --bins
+        working-directory: desktop/src-tauri
+
+  android:
+    name: Android tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+      - name: Run unit tests and build debug APK
+        run: gradle -p android testDebugUnitTest assembleDebug --no-daemon
+
+  slint:
+    name: Slint desktop tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Check formatting
+        run: cargo fmt --all --check
+        working-directory: slints
+      - name: Run tests
+        run: cargo test --locked --all-targets --no-fail-fast
+        working-directory: slints
+      - name: Build release application
+        run: cargo build --release --locked
+        working-directory: slints

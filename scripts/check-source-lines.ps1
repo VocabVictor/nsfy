@@ -17,7 +17,7 @@ $extensions = [Collections.Generic.HashSet[string]]::new(
 )
 $ignoredPathPattern = '(^|[\\/])(node_modules|target|build|dist|gen|\.gradle)([\\/]|$)'
 $violations = [Collections.Generic.List[object]]::new()
-$rg = Get-Command rg.exe -ErrorAction Stop | Select-Object -First 1
+$rg = Get-Command rg -ErrorAction Stop | Select-Object -First 1
 
 Push-Location $repoRoot
 try {
