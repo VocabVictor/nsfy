@@ -14,6 +14,10 @@ pub struct Message {
     pub priority: u8,
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Ordered path such as ["work", "agents", "codex"]. Empty keeps
+    /// compatibility with messages published before categories existed.
+    #[serde(default)]
+    pub category: Vec<String>,
 }
 
 impl Message {
@@ -25,6 +29,7 @@ impl Message {
             message: message.into(),
             priority: 3,
             tags: Vec::new(),
+            category: Vec::new(),
         }
     }
 
@@ -35,6 +40,11 @@ impl Message {
 
     pub fn with_tags(mut self, tags: Vec<String>) -> Self {
         self.tags = tags;
+        self
+    }
+
+    pub fn with_category(mut self, category: Vec<String>) -> Self {
+        self.category = category;
         self
     }
 }
@@ -49,6 +59,8 @@ pub struct PublishRequest {
     pub priority: u8,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub category: Vec<String>,
 }
 
 fn default_priority() -> u8 {
@@ -60,5 +72,6 @@ impl From<PublishRequest> for Message {
         Message::new(req.title, req.message)
             .with_priority(req.priority)
             .with_tags(req.tags)
+            .with_category(req.category)
     }
 }

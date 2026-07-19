@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::access::Permission;
 use crate::handlers::AppState;
 
 /// Compare two byte strings in constant time, so a wrong token takes the same
@@ -200,9 +201,9 @@ pub fn client_ip(headers: &HeaderMap, peer: SocketAddr, trust_proxy: bool) -> Ip
     peer.ip()
 }
 
-/// Global middleware: rate-limit every request by client IP, then — if an
-/// auth token is configured — require it on every route (including `/`, so
-/// topic names can't be enumerated by an unauthenticated caller).
+/// WebSocket upgrades authenticate inside the socket before any message is
+/// sent because browser WebSocket APIs cannot set Authorization headers.
+/// Every other request authenticates here.
 pub async fn guard(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -219,13 +220,26 @@ pub async fn guard(
         return (StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded").into_response();
     }
 
-    if let Some(expected) = &state.auth_token {
-        let provided = bearer_token(&req).or_else(|| query_param(req.uri().query(), "auth"));
-        let ok = match provided {
-            Some(p) => constant_time_eq(p.as_bytes(), expected.as_bytes()),
-            None => false,
+    let websocket_upgrade = req.uri().path().ends_with("/ws")
+        && req
+            .headers()
+            .get(axum::http::header::UPGRADE)
+            .is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"websocket"));
+    if !websocket_upgrade {
+        let token = bearer_token(req.headers());
+        let path = req.uri().path().trim_matches('/');
+        let allowed = if path.is_empty() {
+            state.access.allows_global(token)
+        } else {
+            let topic = path.split('/').next().unwrap_or_default();
+            let permission = if req.method() == Method::POST {
+                Permission::Write
+            } else {
+                Permission::Read
+            };
+            state.access.allows_topic(topic, permission, token)
         };
-        if !ok {
+        if !allowed {
             return (StatusCode::UNAUTHORIZED, "missing or invalid auth token").into_response();
         }
     }
@@ -233,165 +247,14 @@ pub async fn guard(
     next.run(req).await
 }
 
-fn bearer_token(req: &Request) -> Option<String> {
-    let value = req
-        .headers()
+pub fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    let value = headers
         .get(axum::http::header::AUTHORIZATION)?
         .to_str()
         .ok()?;
-    value.strip_prefix("Bearer ").map(|s| s.to_string())
-}
-
-fn query_param(query: Option<&str>, key: &str) -> Option<String> {
-    let query = query?;
-    for pair in query.split('&') {
-        let mut it = pair.splitn(2, '=');
-        if it.next() == Some(key) {
-            return it.next().map(|v| v.to_string());
-        }
-    }
-    None
+    value.strip_prefix("Bearer ")
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn constant_time_eq_matches_equal_slices() {
-        assert!(constant_time_eq(b"secret", b"secret"));
-    }
-
-    #[test]
-    fn constant_time_eq_rejects_different_length_or_content() {
-        assert!(!constant_time_eq(b"secret", b"secre"));
-        assert!(!constant_time_eq(b"secret", b"secrex"));
-    }
-
-    #[test]
-    fn rate_limiter_allows_burst_then_denies() {
-        let rl: RateLimiter<IpAddr> = RateLimiter::new(2, 0.0001);
-        let ip: IpAddr = "127.0.0.1".parse().unwrap();
-        assert!(rl.check(ip));
-        assert!(rl.check(ip));
-        assert!(!rl.check(ip));
-    }
-
-    #[test]
-    fn check_n_meters_bytes_not_just_request_count() {
-        // A byte-budget bucket of 1000, refilling negligibly slowly: two
-        // 400-byte messages fit, a third 400-byte one doesn't even though
-        // only 2 "requests" have happened, and a single request larger than
-        // the whole budget is rejected outright rather than partially spent.
-        let rl: RateLimiter<IpAddr> = RateLimiter::new(1000, 0.0001);
-        let ip: IpAddr = "127.0.0.1".parse().unwrap();
-        assert!(rl.check_n(ip, 400.0));
-        assert!(rl.check_n(ip, 400.0));
-        assert!(!rl.check_n(ip, 400.0));
-
-        let ip2: IpAddr = "127.0.0.2".parse().unwrap();
-        assert!(!rl.check_n(ip2, 5000.0));
-    }
-
-    #[test]
-    fn topic_rate_limiter_keys_by_string() {
-        let rl: RateLimiter<String> = RateLimiter::new(1, 0.0001);
-        assert!(rl.check("alerts".to_string()));
-        assert!(!rl.check("alerts".to_string()));
-        assert!(rl.check("backups".to_string()));
-    }
-
-    #[test]
-    fn query_param_extracts_value() {
-        assert_eq!(
-            query_param(Some("a=1&auth=tok123"), "auth"),
-            Some("tok123".to_string())
-        );
-        assert_eq!(query_param(Some("a=1"), "auth"), None);
-    }
-
-    /// Regression test for the increment-then-check TOCTOU fix: hammer
-    /// `acquire` from many threads at once — a "peek total, then increment"
-    /// implementation would let concurrent callers overshoot `max_total`
-    /// right around this test's contention window.
-    #[test]
-    fn conn_limiter_never_exceeds_total_cap_under_concurrency() {
-        use std::sync::Barrier;
-        use std::thread;
-
-        let max_total = 50;
-        let limiter = Arc::new(ConnLimiter::new(u32::MAX, max_total));
-        let threads = 200;
-        let barrier = Arc::new(Barrier::new(threads));
-
-        let handles: Vec<_> = (0..threads)
-            .map(|i| {
-                let limiter = Arc::clone(&limiter);
-                let barrier = Arc::clone(&barrier);
-                thread::spawn(move || {
-                    let ip: IpAddr = format!("10.0.{}.{}", i / 256, i % 256).parse().unwrap();
-                    barrier.wait();
-                    limiter.acquire(ip)
-                })
-            })
-            .collect();
-
-        let permits: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        let granted = permits.iter().filter(|p| p.is_some()).count();
-        assert_eq!(
-            granted, max_total as usize,
-            "exactly max_total permits should be granted, no more"
-        );
-
-        // Freeing everything must return the counters to exactly zero, not
-        // leave them skewed from the rollback bookkeeping — so the full
-        // budget is acquirable again, held all at once.
-        drop(permits);
-        let ip: IpAddr = "127.0.0.1".parse().unwrap();
-        let refill: Vec<_> = (0..max_total).map(|_| limiter.acquire(ip)).collect();
-        assert!(refill.iter().all(|p| p.is_some()));
-        assert!(
-            limiter.acquire(ip).is_none(),
-            "budget should be exhausted again, not over-refilled"
-        );
-    }
-
-    #[test]
-    fn conn_limiter_enforces_per_ip_and_total_caps() {
-        let cl = ConnLimiter::new(2, 3);
-        let ip: IpAddr = "127.0.0.1".parse().unwrap();
-        let other: IpAddr = "127.0.0.2".parse().unwrap();
-        let p1 = cl.acquire(ip);
-        let p2 = cl.acquire(ip);
-        assert!(p1.is_some() && p2.is_some());
-        assert!(
-            cl.acquire(ip).is_none(),
-            "per-IP cap should reject a 3rd connection"
-        );
-        // Bind the permit — an unbound temporary would drop (and free its
-        // slot) at the end of its statement, defeating this check.
-        let p3 = cl.acquire(other);
-        assert!(p3.is_some(), "different IP has its own budget");
-        assert!(
-            cl.acquire(other).is_none(),
-            "total cap of 3 should now be hit"
-        );
-        drop(p1);
-        assert!(
-            cl.acquire(ip).is_some(),
-            "freeing a permit should free up budget"
-        );
-    }
-
-    #[test]
-    fn client_ip_ignores_forwarded_headers_unless_trusted() {
-        let mut headers = HeaderMap::new();
-        headers.insert("x-forwarded-for", "9.9.9.9".parse().unwrap());
-        let peer: SocketAddr = "127.0.0.1:1234".parse().unwrap();
-        assert_eq!(client_ip(&headers, peer, false), peer.ip());
-        assert_eq!(
-            client_ip(&headers, peer, true),
-            "9.9.9.9".parse::<IpAddr>().unwrap()
-        );
-    }
-}
+#[path = "../tests/unit/security.rs"]
+mod tests;

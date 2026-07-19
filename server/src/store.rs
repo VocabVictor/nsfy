@@ -1,12 +1,23 @@
 use crate::message::Message;
 use rusqlite::{params, Connection};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::{mpsc, oneshot};
 
-/// SQLite-backed message store. Plain synchronous rusqlite calls — callers
-/// (see `Persistence::record` below) push the actual I/O onto a blocking
-/// thread pool via `spawn_blocking` rather than this module doing it
-/// itself, since a `&self` method can't hand a borrowed connection into a
-/// `'static` blocking task anyway; the caller already holds an owned `Arc`.
+const WRITE_QUEUE_CAPACITY: usize = 4096;
+const MAX_COMMIT_BATCH: usize = 64;
+
+struct WriteRequest {
+    topic: String,
+    msg: Message,
+    keep: usize,
+    done: oneshot::Sender<Result<(), String>>,
+}
+
+/// SQLite-backed message store. A single connection is sufficient because
+/// SQLite serializes writes. `Persistence` owns the dedicated writer thread
+/// that calls this synchronous API without blocking Tokio workers.
 pub struct Store {
     conn: Mutex<Connection>,
 }
@@ -14,6 +25,16 @@ pub struct Store {
 impl Store {
     pub fn open(path: &str) -> rusqlite::Result<Self> {
         let conn = Connection::open(path)?;
+        conn.busy_timeout(Duration::from_secs(5))?;
+        let journal_mode: String =
+            conn.query_row("PRAGMA journal_mode=WAL", [], |row| row.get(0))?;
+        if path != ":memory:" && !journal_mode.eq_ignore_ascii_case("wal") {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
+        conn.execute_batch(
+            "PRAGMA synchronous=FULL;
+             PRAGMA foreign_keys=ON;",
+        )?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS messages (
                 topic    TEXT NOT NULL,
@@ -23,10 +44,23 @@ impl Store {
                 message  TEXT NOT NULL,
                 priority INTEGER NOT NULL,
                 tags     TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT '[]',
                 PRIMARY KEY (topic, id)
             );
             CREATE INDEX IF NOT EXISTS idx_messages_topic_time ON messages(topic, time);",
         )?;
+        let has_category = {
+            let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
+            let columns: rusqlite::Result<Vec<String>> =
+                stmt.query_map([], |row| row.get(1))?.collect();
+            columns?.iter().any(|name| name == "category")
+        };
+        if !has_category {
+            conn.execute(
+                "ALTER TABLE messages ADD COLUMN category TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )?;
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -36,34 +70,54 @@ impl Store {
     /// in one transaction, so the database is never briefly larger than the
     /// configured retention even under a crash between the two steps. This
     /// is what keeps history bounded per topic instead of growing forever.
+    #[cfg(test)]
     pub fn insert_and_prune(
         &self,
         topic: &str,
         msg: &Message,
         keep: usize,
     ) -> rusqlite::Result<()> {
-        let tags = serde_json::to_string(&msg.tags).unwrap_or_default();
+        self.insert_and_prune_batch(&[(topic, msg, keep)])
+    }
+
+    fn insert_and_prune_batch(&self, writes: &[(&str, &Message, usize)]) -> rusqlite::Result<()> {
         let mut conn = self.conn.lock().unwrap_or_else(|p| p.into_inner());
         let tx = conn.transaction()?;
-        tx.execute(
-            "INSERT OR REPLACE INTO messages (topic, id, time, title, message, priority, tags)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                topic,
-                msg.id,
-                msg.time,
-                msg.title,
-                msg.message,
-                msg.priority,
-                tags
-            ],
-        )?;
-        tx.execute(
-            "DELETE FROM messages WHERE topic = ?1 AND id NOT IN (
-                SELECT id FROM messages WHERE topic = ?1 ORDER BY time DESC LIMIT ?2
-            )",
-            params![topic, keep as i64],
-        )?;
+        {
+            let mut insert = tx.prepare_cached(
+                "INSERT OR REPLACE INTO messages
+                 (topic, id, time, title, message, priority, tags, category)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            )?;
+            for (topic, msg, _) in writes {
+                let tags = serde_json::to_string(&msg.tags).unwrap_or_default();
+                let category = serde_json::to_string(&msg.category).unwrap_or_default();
+                insert.execute(params![
+                    topic,
+                    msg.id,
+                    msg.time,
+                    msg.title,
+                    msg.message,
+                    msg.priority,
+                    tags,
+                    category
+                ])?;
+            }
+        }
+        let retention: HashMap<&str, usize> = writes
+            .iter()
+            .map(|(topic, _, keep)| (*topic, *keep))
+            .collect();
+        {
+            let mut prune = tx.prepare_cached(
+                "DELETE FROM messages WHERE topic = ?1 AND id NOT IN (
+                    SELECT id FROM messages WHERE topic = ?1 ORDER BY time DESC LIMIT ?2
+                )",
+            )?;
+            for (topic, keep) in retention {
+                prune.execute(params![topic, keep as i64])?;
+            }
+        }
         tx.commit()
     }
 
@@ -81,7 +135,7 @@ impl Store {
         let mut out = Vec::with_capacity(topics.len());
         for topic in topics {
             let mut stmt = conn.prepare(
-                "SELECT id, time, title, message, priority, tags FROM messages
+                "SELECT id, time, title, message, priority, tags, category FROM messages
                  WHERE topic = ?1 ORDER BY time DESC LIMIT ?2",
             )?;
             let mut rows: Vec<Message> = stmt
@@ -94,6 +148,10 @@ impl Store {
                         message: row.get(3)?,
                         priority: row.get(4)?,
                         tags: serde_json::from_str(&tags_json).unwrap_or_default(),
+                        category: {
+                            let value: String = row.get(6)?;
+                            serde_json::from_str(&value).unwrap_or_default()
+                        },
                     })
                 })?
                 .collect::<rusqlite::Result<_>>()?;
@@ -104,106 +162,64 @@ impl Store {
     }
 }
 
-/// Message persistence backend. `None` means pure in-memory (no `--db-path`
-/// given) — the SQLite support is always compiled in, but only activates
-/// when the operator points it at a file.
-pub enum Persistence {
-    None,
-    Sqlite(Arc<Store>),
+#[derive(Clone)]
+pub struct Persistence {
+    sender: mpsc::Sender<WriteRequest>,
 }
 
 impl Persistence {
-    /// Fire-and-forget: this never adds latency to, or can fail, the
-    /// publish response. A write failure is logged and dropped — the
-    /// message was published either way, this is purely about surviving a
-    /// restart, not about whether the publish itself succeeded.
-    pub fn record(&self, topic: &str, msg: &Message, keep: usize) {
-        match self {
-            Persistence::None => {}
-            Persistence::Sqlite(store) => {
-                let store = Arc::clone(store);
-                let topic = topic.to_string();
-                let msg = msg.clone();
-                tokio::spawn(async move {
-                    let result = tokio::task::spawn_blocking(move || {
-                        store.insert_and_prune(&topic, &msg, keep)
-                    })
-                    .await;
-                    match result {
-                        Ok(Ok(())) => {}
-                        Ok(Err(e)) => tracing::warn!("failed to persist message: {}", e),
-                        Err(e) => tracing::warn!("persistence task panicked: {}", e),
-                    }
-                });
+    pub fn sqlite(store: Arc<Store>) -> Result<Self, String> {
+        let (sender, receiver) = mpsc::channel(WRITE_QUEUE_CAPACITY);
+        std::thread::Builder::new()
+            .name("nsfy-sqlite-writer".to_string())
+            .spawn(move || writer_loop(store, receiver))
+            .map_err(|error| format!("failed to start persistence writer: {error}"))?;
+        Ok(Self { sender })
+    }
+
+    /// A publish is acknowledged only after its SQLite transaction commits.
+    /// This keeps "200 OK" from meaning merely "queued for a best-effort
+    /// background write" and guarantees replay after a successful response.
+    pub async fn record(&self, topic: &str, msg: &Message, keep: usize) -> Result<(), String> {
+        let (done, result) = oneshot::channel();
+        self.sender
+            .send(WriteRequest {
+                topic: topic.to_string(),
+                msg: msg.clone(),
+                keep,
+                done,
+            })
+            .await
+            .map_err(|_| "persistence writer stopped".to_string())?;
+        result
+            .await
+            .map_err(|_| "persistence writer stopped before commit".to_string())?
+    }
+}
+
+fn writer_loop(store: Arc<Store>, mut receiver: mpsc::Receiver<WriteRequest>) {
+    while let Some(first) = receiver.blocking_recv() {
+        let mut batch = Vec::with_capacity(MAX_COMMIT_BATCH);
+        batch.push(first);
+        while batch.len() < MAX_COMMIT_BATCH {
+            match receiver.try_recv() {
+                Ok(request) => batch.push(request),
+                Err(_) => break,
             }
+        }
+        let writes: Vec<_> = batch
+            .iter()
+            .map(|request| (request.topic.as_str(), &request.msg, request.keep))
+            .collect();
+        let outcome = store
+            .insert_and_prune_batch(&writes)
+            .map_err(|error| format!("failed to persist message batch: {error}"));
+        for request in batch {
+            let _ = request.done.send(outcome.clone());
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::message::Message;
-
-    fn msg(id: &str, time: i64, body: &str) -> Message {
-        Message {
-            id: id.to_string(),
-            time,
-            title: "t".to_string(),
-            message: body.to_string(),
-            priority: 3,
-            tags: vec!["tag1".to_string()],
-        }
-    }
-
-    #[test]
-    fn insert_and_prune_keeps_only_the_most_recent_n_per_topic() {
-        let store = Store::open(":memory:").unwrap();
-        for i in 0..5 {
-            store
-                .insert_and_prune("alerts", &msg(&format!("id{i}"), i, "body"), 3)
-                .unwrap();
-        }
-        let loaded = store.load_all(10).unwrap();
-        assert_eq!(loaded.len(), 1);
-        let (topic, msgs) = &loaded[0];
-        assert_eq!(topic, "alerts");
-        assert_eq!(msgs.len(), 3, "should have pruned down to the keep limit");
-        // Oldest-first order, and it's the 3 most recent (id2, id3, id4).
-        assert_eq!(msgs[0].id, "id2");
-        assert_eq!(msgs[2].id, "id4");
-    }
-
-    #[test]
-    fn load_all_round_trips_fields_including_tags() {
-        let store = Store::open(":memory:").unwrap();
-        store
-            .insert_and_prune("t", &msg("a", 1, "hello"), 10)
-            .unwrap();
-        let loaded = store.load_all(10).unwrap();
-        let (_, msgs) = &loaded[0];
-        assert_eq!(msgs[0].message, "hello");
-        assert_eq!(msgs[0].tags, vec!["tag1".to_string()]);
-    }
-
-    #[test]
-    fn separate_topics_are_pruned_independently() {
-        let store = Store::open(":memory:").unwrap();
-        for i in 0..3 {
-            store
-                .insert_and_prune("a", &msg(&format!("a{i}"), i, "x"), 1)
-                .unwrap();
-            store
-                .insert_and_prune("b", &msg(&format!("b{i}"), i, "x"), 5)
-                .unwrap();
-        }
-        let loaded: std::collections::HashMap<_, _> =
-            store.load_all(10).unwrap().into_iter().collect();
-        assert_eq!(loaded["a"].len(), 1, "topic a keeps only 1");
-        assert_eq!(
-            loaded["b"].len(),
-            3,
-            "topic b keeps up to 5, only 3 were written"
-        );
-    }
-}
+#[path = "../tests/unit/store.rs"]
+mod tests;

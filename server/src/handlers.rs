@@ -1,8 +1,9 @@
+use crate::access::AccessControl;
 use crate::message::{Message, PublishRequest};
 use crate::pubsub::PubSub;
 use crate::security::{client_ip, ConnLimiter, ConnPermit, RateLimiter};
 use crate::store::Persistence;
-use axum::extract::{ws, ConnectInfo, Path, Query, State, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::IntoResponse;
@@ -15,11 +16,11 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 pub struct AppState {
     pub pubsub: PubSub,
-    pub auth_token: Option<String>,
+    pub access: AccessControl,
     pub rate_limiter: RateLimiter<IpAddr>,
     pub topic_rate_limiter: RateLimiter<String>,
     pub bandwidth_limiter: RateLimiter<IpAddr>,
@@ -35,11 +36,13 @@ const MAX_TOPIC_LEN: usize = 128;
 const MAX_TITLE_LEN: usize = 512;
 const MAX_TAGS: usize = 32;
 const MAX_TAG_LEN: usize = 64;
+const MAX_CATEGORY_DEPTH: usize = 8;
+const MAX_CATEGORY_SEGMENT_LEN: usize = 64;
 
 /// Topic names land in log lines and DashMap keys, never in a filesystem
 /// path, so this isn't about traversal — it's about keeping out control
 /// characters (log injection) and unbounded-length keys.
-fn is_valid_topic(topic: &str) -> bool {
+pub(crate) fn is_valid_topic(topic: &str) -> bool {
     !topic.is_empty()
         && topic.len() <= MAX_TOPIC_LEN
         && topic
@@ -62,6 +65,16 @@ fn validate_publish(req: &PublishRequest, max_msg_size: usize) -> Result<(), &'s
     }
     if req.tags.iter().any(|t| t.len() > MAX_TAG_LEN) {
         return Err("tag too large");
+    }
+    if req.category.len() > MAX_CATEGORY_DEPTH {
+        return Err("category is too deep");
+    }
+    if req.category.iter().any(|segment| {
+        segment.trim().is_empty()
+            || segment.len() > MAX_CATEGORY_SEGMENT_LEN
+            || segment.chars().any(char::is_control)
+    }) {
+        return Err("invalid category segment");
     }
     Ok(())
 }
@@ -118,7 +131,9 @@ pub async fn publish(
     let msg_json = serde_json::to_string(&msg).unwrap();
     state
         .persistence
-        .record(&topic, &msg, state.db_keep_per_topic);
+        .record(&topic, &msg, state.db_keep_per_topic)
+        .await
+        .map_err(AppError::unavailable)?;
 
     if !state.pubsub.publish(&topic, msg).await {
         return Err(AppError::unavailable("topic table full, try again later"));
@@ -142,120 +157,6 @@ pub async fn poll(
         Some(msgs) => Ok(Json(msgs)),
         None => Err(AppError::unavailable("topic table full, try again later")),
     }
-}
-
-/// GET /<topic>/ws — WebSocket subscription
-pub async fn ws_subscribe(
-    State(state): State<Arc<AppState>>,
-    Path(topic): Path<String>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
-    ws: WebSocketUpgrade,
-) -> Result<impl IntoResponse, AppError> {
-    if !is_valid_topic(&topic) {
-        return Err(AppError::bad_request("invalid topic name"));
-    }
-    let ip = client_ip(&headers, addr, state.trust_proxy);
-    let Some(permit) = state.conn_limiter.acquire(ip) else {
-        return Err(AppError::too_many_requests(
-            "too many concurrent connections",
-        ));
-    };
-    debug!("ws upgrade requested for topic: {}", topic);
-    // Frame/message size bounded to the configured message limit (plus JSON
-    // structure overhead) so a client can't force a large allocation before
-    // any application-level validation runs.
-    let ws_limit = state.max_msg_size.saturating_add(4096);
-    Ok(ws
-        .max_message_size(ws_limit)
-        .max_frame_size(ws_limit)
-        .on_upgrade(move |socket| handle_ws(socket, state, topic, ip, permit)))
-}
-
-async fn handle_ws(
-    mut socket: ws::WebSocket,
-    state: Arc<AppState>,
-    topic: String,
-    ip: IpAddr,
-    _permit: ConnPermit,
-) {
-    info!("ws connected to topic: {}", topic);
-
-    // Send cached messages first
-    let Some(cached) = state.pubsub.get_messages_arc(&topic, None).await else {
-        let _ = socket.send(ws::Message::Close(None)).await;
-        return;
-    };
-    for msg in &cached {
-        let payload = serde_json::to_string(msg.as_ref()).unwrap();
-        if socket
-            .send(ws::Message::Text(payload.into()))
-            .await
-            .is_err()
-        {
-            return;
-        }
-    }
-
-    // Subscribe to live messages
-    let Some((_, mut rx)) = state.pubsub.subscribe(&topic) else {
-        let _ = socket.send(ws::Message::Close(None)).await;
-        return;
-    };
-
-    loop {
-        tokio::select! {
-            result = rx.recv() => {
-                match result {
-                    Ok(msg) => {
-                        let payload = serde_json::to_string(msg.as_ref()).unwrap();
-                        if socket.send(ws::Message::Text(payload.into())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("ws lagged by {} messages for topic: {}", n, topic);
-                        continue;
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
-                }
-            }
-            msg = socket.recv() => {
-                match msg {
-                    Some(Ok(ws::Message::Text(text))) => {
-                        // Client can also publish via WS — same rate limits and
-                        // field checks as the HTTP path, since this bypasses it.
-                        // No separate topic-creation check: subscribing already
-                        // created `topic`, so it always exists by this point.
-                        if !state.rate_limiter.check(ip) || !state.topic_rate_limiter.check(topic.clone()) {
-                            continue;
-                        }
-                        if let Ok(req) = serde_json::from_str::<PublishRequest>(&text) {
-                            if validate_publish(&req, state.max_msg_size).is_ok()
-                                && state.bandwidth_limiter.check_n(ip, req.message.len() as f64)
-                            {
-                                let msg: Message = req.into();
-                                state.persistence.record(&topic, &msg, state.db_keep_per_topic);
-                                state.pubsub.publish(&topic, msg).await;
-                            }
-                        }
-                    }
-                    Some(Ok(ws::Message::Close(_))) | None => break,
-                    Some(Ok(_)) => {} // ignore binary/ping/pong
-                    Some(Err(e)) => {
-                        warn!("ws error on topic {}: {}", topic, e);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    let stats = state.pubsub.stats();
-    info!(
-        "ws disconnected from topic: {} ({} topics, {} total subscribers)",
-        topic, stats.topics, stats.total_subscribers
-    );
 }
 
 /// GET /<topic>/sse — Server-Sent Events subscription
@@ -324,7 +225,7 @@ impl<S: Stream + Unpin> Stream for WithPermit<S> {
 
 // --- Error handling ---
 
-pub struct AppError {
+pub(crate) struct AppError {
     status: StatusCode,
     message: String,
 }
@@ -350,6 +251,13 @@ impl AppError {
             message: msg.into(),
         }
     }
+
+    pub fn forbidden(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: msg.into(),
+        }
+    }
 }
 
 impl IntoResponse for AppError {
@@ -357,6 +265,3 @@ impl IntoResponse for AppError {
         (self.status, self.message).into_response()
     }
 }
-
-// Required for broadcast receiver
-use tokio::sync::broadcast;

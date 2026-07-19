@@ -1,4 +1,5 @@
 use crate::message::Message;
+use dashmap::mapref::entry::Entry;
 use dashmap::DashMap;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,8 +16,8 @@ pub struct Topic {
 }
 
 impl Topic {
-    pub fn new(max_cache: usize) -> Self {
-        let (tx, _) = broadcast::channel(1024);
+    pub fn new(max_cache: usize, stream_buffer_size: usize) -> Self {
+        let (tx, _) = broadcast::channel(stream_buffer_size.max(1));
         Self {
             tx,
             cache: tokio::sync::Mutex::new(VecDeque::with_capacity(max_cache)),
@@ -95,18 +96,20 @@ pub type Subscription = (Vec<Arc<Message>>, broadcast::Receiver<Arc<Message>>);
 pub struct PubSub {
     topics: DashMap<String, Arc<Topic>>,
     cache_size: usize,
+    stream_buffer_size: usize,
     max_topics: usize,
 }
 
 impl PubSub {
-    pub fn new(cache_size: usize, max_topics: usize) -> Self {
+    pub fn new(cache_size: usize, stream_buffer_size: usize, max_topics: usize) -> Self {
         info!(
-            "pubsub engine initialized, cache_size={}, max_topics={}",
-            cache_size, max_topics
+            "pubsub engine initialized, cache_size={}, stream_buffer_size={}, max_topics={}",
+            cache_size, stream_buffer_size, max_topics
         );
         Self {
             topics: DashMap::new(),
             cache_size,
+            stream_buffer_size,
             max_topics,
         }
     }
@@ -125,7 +128,7 @@ impl PubSub {
     /// `sqlite` feature, the only backend that currently calls it.
     #[allow(dead_code)]
     pub async fn seed(&self, name: &str, messages: Vec<Message>) {
-        let topic = Arc::new(Topic::new(self.cache_size));
+        let topic = Arc::new(Topic::new(self.cache_size, self.stream_buffer_size));
         topic.seed(messages).await;
         self.topics.insert(name.to_string(), topic);
     }
@@ -141,11 +144,15 @@ impl PubSub {
         if self.topics.len() >= self.max_topics {
             return None;
         }
-        // Slow path: create
-        let topic = Arc::new(Topic::new(self.cache_size));
-        self.topics.insert(name.to_string(), Arc::clone(&topic));
-        debug!("topic created: {}", name);
-        Some(topic)
+        match self.topics.entry(name.to_string()) {
+            Entry::Occupied(entry) => Some(Arc::clone(entry.get())),
+            Entry::Vacant(entry) => {
+                let topic = Arc::new(Topic::new(self.cache_size, self.stream_buffer_size));
+                entry.insert(Arc::clone(&topic));
+                debug!("topic created: {}", name);
+                Some(topic)
+            }
+        }
     }
 
     /// Publish a message to a topic (creates topic if needed).
@@ -205,29 +212,5 @@ pub struct PubSubStats {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn topic_exists_reflects_creation_without_creating_on_check() {
-        let ps = PubSub::new(10, 10);
-        assert!(!ps.topic_exists("alerts"));
-        ps.get_or_create("alerts");
-        assert!(ps.topic_exists("alerts"));
-        // A second, unrelated topic name is still unknown.
-        assert!(!ps.topic_exists("backups"));
-    }
-
-    #[test]
-    fn get_or_create_returns_none_once_max_topics_reached() {
-        let ps = PubSub::new(10, 2);
-        assert!(ps.get_or_create("a").is_some());
-        assert!(ps.get_or_create("b").is_some());
-        assert!(
-            ps.get_or_create("c").is_none(),
-            "third topic should be rejected at the cap"
-        );
-        // Existing topics remain reachable even while at the cap.
-        assert!(ps.get_or_create("a").is_some());
-    }
-}
+#[path = "../tests/unit/pubsub.rs"]
+mod tests;

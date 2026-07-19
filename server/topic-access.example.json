@@ -1,0 +1,9 @@
+{
+  "default": "deny",
+  "topics": {
+    "alerts": {
+      "read": "replace-with-a-random-read-token",
+      "write": "replace-with-a-random-write-token"
+    }
+  }
+}

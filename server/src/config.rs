@@ -7,21 +7,39 @@ use clap::Parser;
 )]
 pub struct Config {
     /// Address to listen on
-    #[arg(long, env = "NSFY_LISTEN", default_value = "0.0.0.0:8080")]
+    #[arg(long, env = "NSFY_LISTEN", default_value = "127.0.0.1:8080")]
     pub listen: String,
+
+    /// PEM certificate chain for built-in HTTPS/WSS. Must be paired with
+    /// --tls-key. Non-loopback listeners always require TLS.
+    #[arg(long, env = "NSFY_TLS_CERT")]
+    pub tls_cert: Option<String>,
+
+    /// PEM private key for built-in HTTPS/WSS
+    #[arg(long, env = "NSFY_TLS_KEY")]
+    pub tls_key: Option<String>,
 
     /// Max cached messages per topic
     #[arg(long, env = "NSFY_CACHE_SIZE", default_value = "100")]
     pub cache_size: usize,
 
+    /// Pending live messages retained for a temporarily slow WS/SSE reader.
+    /// Raise this for unusually bursty topics at the cost of memory per Topic.
+    #[arg(long, env = "NSFY_STREAM_BUFFER_SIZE", default_value = "256")]
+    pub stream_buffer_size: usize,
+
     /// Max message body size in bytes
     #[arg(long, env = "NSFY_MAX_MSG_SIZE", default_value = "65536")]
     pub max_msg_size: usize,
 
-    /// Optional auth token — clients must pass Authorization: Bearer <token>
-    /// or ?auth=<token>. Required on every route, including `/`, once set.
+    /// Optional auth token — clients pass Authorization: Bearer <token>.
+    /// A non-loopback listener requires a token.
     #[arg(long, env = "NSFY_AUTH_TOKEN")]
     pub auth_token: Option<String>,
+
+    /// JSON file containing independent read and write tokens per topic
+    #[arg(long, env = "NSFY_TOPIC_ACCESS_FILE")]
+    pub topic_access_file: Option<String>,
 
     /// Max requests per minute per client IP (burst + sustained refill)
     #[arg(long, env = "NSFY_RATE_LIMIT_PER_MIN", default_value = "300")]
@@ -69,11 +87,10 @@ pub struct Config {
     #[arg(long, env = "NSFY_STATS_INTERVAL", default_value = "60")]
     pub stats_interval: u64,
 
-    /// Path to a SQLite database file for persisting messages across
-    /// restarts. Unset (the default) means pure in-memory — messages are
-    /// lost on restart.
-    #[arg(long, env = "NSFY_DB_PATH")]
-    pub db_path: Option<String>,
+    /// SQLite database file. Persistence is mandatory: opening, migrating,
+    /// or loading this database must succeed before the listener starts.
+    #[arg(long, env = "NSFY_DB_PATH", default_value = "nsfy.db")]
+    pub db_path: String,
 
     /// How many messages to retain per topic in the database — same
     /// ring-buffer semantics as --cache-size, just on disk. Defaults to

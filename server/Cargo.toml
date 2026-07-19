@@ -7,6 +7,8 @@ license = "MIT"
 
 [dependencies]
 axum = { version = "0.8", features = ["ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace", "catch-panic"] }
@@ -30,6 +32,13 @@ futures-core = "0.3"
 # just a bigger binary. Always compiled in; --db-path (unset by default)
 # decides whether it's actually used at runtime.
 rusqlite = { version = "0.32", features = ["bundled"] }
+
+[dev-dependencies]
+rcgen = "0.13"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+tempfile = "3"
+tungstenite = "0.26"
+sysinfo = "0.33"
 
 [profile.release]
 lto = true
