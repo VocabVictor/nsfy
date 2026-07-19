@@ -1,0 +1,96 @@
+import { Theme } from "theme.slint";
+import { TopicData, MessageData } from "types.slint";
+import { Sidebar } from "components/sidebar.slint";
+import { AppHeader } from "components/header.slint";
+import { TopicView } from "views/topic-view.slint";
+import { TimelineView } from "views/timeline-view.slint";
+import { SettingsView } from "views/settings-view.slint";
+import { PublishOverlay, AddSubscriptionOverlay } from "overlays.slint";
+export { NsfyTray } from "tray.slint";
+
+export { TopicData, MessageData }
+
+export component AppWindow inherits Window {
+    title: "信鸽 · 推送提醒 — Slint 原生原型";
+    preferred-width: 1180px;
+    preferred-height: 740px;
+    min-width: 900px;
+    min-height: 600px;
+    background: Theme.canvas;
+    default-font-family: "Microsoft YaHei UI";
+    default-font-size: 12px;
+
+    in property <[TopicData]> topics;
+    in property <[MessageData]> messages;
+    in property <[MessageData]> selected-messages;
+    in property <string> server-address: "http://localhost:8080";
+    in property <string> connection-summary: "WebSocket 0/0 在线";
+    in property <bool> notifications-enabled: true;
+    in-out property <int> active-topic: 0;
+    in-out property <int> active-view: 0;
+    in-out property <bool> show-publish: false;
+    in-out property <bool> show-add: false;
+    in-out property <string> search-text: "";
+    callback subscribe-requested(string);
+    callback topic-selected(string);
+
+    HorizontalLayout {
+        spacing: 0px;
+        Sidebar {
+            topics: root.topics;
+            active-topic <=> root.active-topic;
+            active-view <=> root.active-view;
+            open-add => { root.show-add = true; }
+            connection-summary: root.connection-summary;
+            topic-selected(index) => {
+                root.topic-selected(root.topics[index].name);
+            }
+        }
+        Rectangle { width: 1px; background: Theme.border; }
+        Rectangle {
+            horizontal-stretch: 1;
+            background: Theme.canvas;
+            VerticalLayout {
+                spacing: 0px;
+                AppHeader {
+                    title: root.active-view == 0 ? root.topics[root.active-topic].name :
+                        (root.active-view == 1 ? "统一时间线" : "设置");
+                    subtitle: root.active-view == 0 ? root.topics[root.active-topic].subtitle :
+                        (root.active-view == 1 ? "全部主题的最新推送" : "连接、通知与显示偏好");
+                    show-actions: root.active-view != 2;
+                    search-text <=> root.search-text;
+                    open-publish => { root.show-publish = true; }
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                if root.active-view == 0: TopicView {
+                    vertical-stretch: 1;
+                    topic: root.topics[root.active-topic];
+                    messages: root.selected-messages;
+                    open-publish => { root.show-publish = true; }
+                }
+                if root.active-view == 1: TimelineView {
+                    vertical-stretch: 1;
+                    messages: root.messages;
+                }
+                if root.active-view == 2: SettingsView {
+                    vertical-stretch: 1;
+                    server-address: root.server-address;
+                    notifications-enabled: root.notifications-enabled;
+                }
+            }
+        }
+    }
+
+    if root.show-publish: PublishOverlay {
+        topic: root.topics[root.active-topic];
+        close => { root.show-publish = false; }
+    }
+    if root.show-add: AddSubscriptionOverlay {
+        server-address: root.server-address;
+        subscribe(topic) => {
+            root.subscribe-requested(topic);
+            root.show-add = false;
+        }
+        close => { root.show-add = false; }
+    }
+}

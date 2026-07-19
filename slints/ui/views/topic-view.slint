@@ -1,0 +1,130 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { TopicData, MessageData } from "../types.slint";
+import { MessageCard } from "../components/message-card.slint";
+import { PillButton } from "../components/common.slint";
+
+export component TopicView inherits Rectangle {
+    in property <TopicData> topic;
+    in property <[MessageData]> messages;
+    callback open-publish;
+
+    background: Theme.canvas;
+    HorizontalLayout {
+        spacing: 0px;
+        Rectangle {
+            horizontal-stretch: 1;
+            background: Theme.canvas;
+            VerticalLayout {
+                padding-top: 24px;
+                padding-right: 28px;
+                padding-bottom: 26px;
+                padding-left: 28px;
+                spacing: 13px;
+                HorizontalLayout {
+                    height: 28px;
+                    Text {
+                        text: "最近消息"; color: Theme.text-secondary;
+                        font-size: 11px; font-weight: 650; vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Rectangle {
+                        width: 76px; height: 25px; border-radius: 7px; background: Theme.accent-soft;
+                        Text {
+                            text: "全部已读"; color: Theme.accent-hover; font-size: 10px;
+                            font-weight: 600; horizontal-alignment: center; vertical-alignment: center;
+                        }
+                    }
+                }
+                ScrollView {
+                    vertical-stretch: 1;
+                    HorizontalLayout {
+                        spacing: 0px;
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 8px;
+                            for item in root.messages: MessageCard { data: item; }
+                        }
+                        Rectangle { width: 6px; }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            width: 268px;
+            background: #fbfcfd;
+            VerticalLayout {
+                padding-top: 24px;
+                padding-right: 20px;
+                padding-bottom: 24px;
+                padding-left: 20px;
+                spacing: 12px;
+                Text { text: "主题概览"; color: Theme.text-secondary; font-size: 11px; font-weight: 650; }
+                Rectangle {
+                    height: 126px;
+                    border-radius: 11px;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    background: Theme.canvas;
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 7px;
+                        HorizontalLayout {
+                            Text { text: root.topic.name; color: Theme.text; font-size: 13px; font-weight: 700; }
+                            Rectangle { horizontal-stretch: 1; }
+                            Rectangle {
+                                width: 58px; height: 21px; border-radius: 11px;
+                                background: root.topic.online ? #dcfce7 : #fef3c7;
+                                Text {
+                                    text: root.topic.online ? "接收中" : "重连中";
+                                    color: root.topic.online ? #15803d : #b45309;
+                                    font-size: 9px; font-weight: 650;
+                                    horizontal-alignment: center; vertical-alignment: center;
+                                }
+                            }
+                        }
+                        Text { text: root.topic.subtitle; color: Theme.text-muted; font-size: 10px; }
+                        Rectangle { height: 1px; background: Theme.border; }
+                        HorizontalLayout {
+                            Text { text: "今日接收"; color: Theme.text-muted; font-size: 10px; }
+                            Rectangle { horizontal-stretch: 1; }
+                            Text { text: "5 条"; color: Theme.text; font-size: 10px; font-weight: 650; }
+                        }
+                        HorizontalLayout {
+                            Text { text: "连接延迟"; color: Theme.text-muted; font-size: 10px; }
+                            Rectangle { horizontal-stretch: 1; }
+                            Text { text: "18 ms"; color: Theme.success; font-size: 10px; font-weight: 650; }
+                        }
+                    }
+                }
+
+                Text { text: "快速发布"; color: Theme.text-secondary; font-size: 11px; font-weight: 650; }
+                Rectangle {
+                    height: 142px;
+                    border-radius: 11px;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    background: Theme.canvas;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+                        Rectangle {
+                            height: 31px; border-radius: 6px; background: Theme.surface;
+                            Text { text: "标题（可选）"; color: Theme.text-faint; font-size: 10px; x: 10px; vertical-alignment: center; }
+                        }
+                        Rectangle {
+                            vertical-stretch: 1; border-radius: 6px; background: Theme.surface;
+                            Text { text: "输入通知内容…"; color: Theme.text-faint; font-size: 10px; x: 10px; y: 9px; }
+                        }
+                        PillButton {
+                            text: "发送"; primary: true; height: 29px;
+                            clicked => { root.open-publish(); }
+                        }
+                    }
+                }
+                Rectangle { vertical-stretch: 1; }
+            }
+        }
+    }
+}

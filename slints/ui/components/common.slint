@@ -1,0 +1,54 @@
+import { Theme } from "../theme.slint";
+
+export component PillButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> selected: false;
+    in property <bool> primary: false;
+    callback clicked;
+
+    height: 32px;
+    min-width: 72px;
+    border-radius: 7px;
+    border-width: primary ? 0px : 1px;
+    border-color: selected ? Theme.accent : Theme.border;
+    background: primary ? Theme.accent : (selected ? Theme.accent-soft : Theme.canvas);
+
+    Text {
+        text: root.text;
+        color: primary ? white : (selected ? Theme.accent-hover : Theme.text-secondary);
+        font-size: 12px;
+        font-weight: selected || primary ? 600 : 400;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+        mouse-cursor: pointer;
+    }
+}
+
+export component IconButton inherits Rectangle {
+    in property <string> glyph;
+    callback clicked;
+
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: touch.has-hover ? Theme.hover : Theme.canvas;
+
+    Text {
+        text: root.glyph;
+        color: Theme.text-muted;
+        font-size: 14px;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+        mouse-cursor: pointer;
+    }
+}

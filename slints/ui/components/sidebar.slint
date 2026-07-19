@@ -1,0 +1,174 @@
+import { Theme } from "../theme.slint";
+import { TopicData } from "../types.slint";
+
+component SidebarTopic inherits Rectangle {
+    in property <TopicData> data;
+    in property <bool> selected: false;
+    callback clicked;
+
+    height: 48px;
+    border-radius: 8px;
+    background: selected ? Theme.accent-soft : (touch.has-hover ? Theme.hover : #00000000);
+
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 9px;
+        spacing: 9px;
+        alignment: center;
+        Rectangle { width: 8px; height: 8px; border-radius: 4px; background: data.marker; }
+        VerticalLayout {
+            spacing: 2px;
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: data.name;
+                color: selected ? Theme.accent-hover : Theme.text-secondary;
+                font-size: 12px;
+                font-weight: selected ? 600 : 500;
+                overflow: elide;
+            }
+            Text { text: data.subtitle; color: Theme.text-faint; font-size: 9px; overflow: elide; }
+        }
+        Rectangle {
+            visible: data.online;
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background: Theme.success;
+        }
+        Rectangle {
+            visible: data.unread > 0;
+            width: 21px;
+            height: 19px;
+            border-radius: 10px;
+            background: Theme.accent;
+            Text {
+                text: "\{data.unread}";
+                color: white;
+                font-size: 9px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    touch := TouchArea { clicked => { root.clicked(); } mouse-cursor: pointer; }
+}
+
+component SidebarAction inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> selected: false;
+    callback clicked;
+
+    height: 38px;
+    border-radius: 8px;
+    background: selected ? Theme.accent-soft : (touch.has-hover ? Theme.hover : #00000000);
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        Text {
+            width: 17px;
+            text: root.icon;
+            color: selected ? Theme.accent-hover : Theme.text-muted;
+            font-size: 15px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.text;
+            color: selected ? Theme.accent-hover : Theme.text-secondary;
+            font-size: 12px;
+            font-weight: selected ? 600 : 400;
+            vertical-alignment: center;
+        }
+    }
+    touch := TouchArea { clicked => { root.clicked(); } mouse-cursor: pointer; }
+}
+
+export component Sidebar inherits Rectangle {
+    in property <[TopicData]> topics;
+    in-out property <int> active-topic: 0;
+    in-out property <int> active-view: 0;
+    callback open-add;
+    callback topic-selected(int);
+    in property <string> connection-summary;
+
+    width: 224px;
+    background: Theme.shell;
+
+    VerticalLayout {
+        padding-top: 18px;
+        padding-right: 14px;
+        padding-bottom: 14px;
+        padding-left: 14px;
+        spacing: 8px;
+
+        HorizontalLayout {
+            height: 38px;
+            padding-left: 8px;
+            padding-right: 4px;
+            spacing: 9px;
+            alignment: center;
+            Rectangle {
+                width: 27px; height: 27px; border-radius: 8px; background: Theme.accent;
+                Text {
+                    text: "信"; color: white; font-size: 13px; font-weight: 700;
+                    horizontal-alignment: center; vertical-alignment: center;
+                }
+            }
+            VerticalLayout {
+                spacing: 0px;
+                alignment: center;
+                Text { text: "信鸽"; color: Theme.text; font-size: 16px; font-weight: 700; }
+                Text {
+                    text: "PUSH NOTIFICATIONS"; color: Theme.text-faint;
+                    font-size: 7px; letter-spacing: 0.7px;
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: Theme.border; }
+        Text {
+            text: "订阅主题"; color: Theme.text-faint; font-size: 9px;
+            font-weight: 650; letter-spacing: 0.8px;
+        }
+        VerticalLayout {
+            spacing: 3px;
+            for topic[index] in root.topics: SidebarTopic {
+                data: topic;
+                selected: root.active-view == 0 && root.active-topic == index;
+                clicked => {
+                    root.active-topic = index;
+                    root.active-view = 0;
+                    root.topic-selected(index);
+                }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+        Rectangle { height: 1px; background: Theme.border; }
+        SidebarAction { icon: "+"; text: "新建订阅"; clicked => { root.open-add(); } }
+        SidebarAction {
+            icon: "≡"; text: "统一时间线"; selected: root.active-view == 1;
+            clicked => { root.active-view = 1; }
+        }
+        SidebarAction {
+            icon: "⚙"; text: "设置"; selected: root.active-view == 2;
+            clicked => { root.active-view = 2; }
+        }
+        HorizontalLayout {
+            height: 26px;
+            padding-left: 10px;
+            padding-right: 8px;
+            spacing: 7px;
+            alignment: center;
+            Rectangle { width: 6px; height: 6px; border-radius: 3px; background: Theme.success; }
+            Text { text: root.connection-summary; color: Theme.text-faint; font-size: 9px; }
+            Rectangle { horizontal-stretch: 1; }
+            Text { text: "Slint"; color: Theme.text-faint; font-size: 9px; }
+        }
+    }
+}

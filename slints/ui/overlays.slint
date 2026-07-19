@@ -1,0 +1,142 @@
+import { LineEdit } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { TopicData } from "types.slint";
+import { PillButton, IconButton } from "components/common.slint";
+
+component FieldLabel inherits Text {
+    color: Theme.text-muted;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+component StaticField inherits Rectangle {
+    in property <string> value;
+    height: 38px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+    Text {
+        text: root.value; color: Theme.text-secondary;
+        font-size: 11px; x: 12px; vertical-alignment: center;
+    }
+}
+
+component DialogActions inherits HorizontalLayout {
+    in property <string> accept-text;
+    callback close;
+    callback accept;
+    height: 34px;
+    spacing: 8px;
+    PillButton { text: "取消"; clicked => { root.close(); } }
+    Rectangle { horizontal-stretch: 1; }
+    PillButton { text: root.accept-text; primary: true; clicked => { root.accept(); } }
+}
+
+export component PublishOverlay inherits Rectangle {
+    in property <TopicData> topic;
+    callback close;
+
+    background: #66000000;
+    TouchArea { clicked => { root.close(); } }
+    Rectangle {
+        width: 440px;
+        height: 410px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 14px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.canvas;
+        VerticalLayout {
+            padding: 22px;
+            spacing: 14px;
+            HorizontalLayout {
+                Text {
+                    text: "发布消息"; color: Theme.text; font-size: 17px;
+                    font-weight: 700; vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                IconButton { glyph: "×"; clicked => { root.close(); } }
+            }
+            FieldLabel { text: "主题"; }
+            StaticField { value: root.topic.name; }
+            FieldLabel { text: "标题"; }
+            Rectangle {
+                height: 38px;
+                border-radius: 7px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.canvas;
+                LineEdit {
+                    x: 10px; width: parent.width - 20px;
+                    text: "磁盘空间提醒"; placeholder-text: "标题（可选）";
+                }
+            }
+            FieldLabel { text: "内容"; }
+            Rectangle {
+                vertical-stretch: 1;
+                border-radius: 7px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.surface;
+                Text {
+                    text: "输入要推送的通知内容…"; color: Theme.text-faint;
+                    font-size: 11px; x: 12px; y: 11px;
+                }
+            }
+            DialogActions { close => { root.close(); } accept => { root.close(); } accept-text: "发布"; }
+        }
+    }
+}
+
+export component AddSubscriptionOverlay inherits Rectangle {
+    callback close;
+    callback subscribe(string);
+    in property <string> server-address;
+    in-out property <string> topic-name;
+
+    background: #66000000;
+    TouchArea { clicked => { root.close(); } }
+    Rectangle {
+        width: 420px;
+        height: 300px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: 14px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.canvas;
+        VerticalLayout {
+            padding: 22px;
+            spacing: 14px;
+            HorizontalLayout {
+                Text { text: "新建订阅"; color: Theme.text; font-size: 17px; font-weight: 700; }
+                Rectangle { horizontal-stretch: 1; }
+                IconButton { glyph: "×"; clicked => { root.close(); } }
+            }
+            FieldLabel { text: "服务器"; }
+            StaticField { value: "Local · " + root.server-address; }
+            FieldLabel { text: "主题名"; }
+            Rectangle {
+                height: 38px;
+                border-radius: 7px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.canvas;
+                LineEdit {
+                    x: 10px; width: parent.width - 20px;
+                    text <=> root.topic-name;
+                    placeholder-text: "例如 alerts";
+                    accepted => { if root.topic-name != "" { root.subscribe(root.topic-name); } }
+                }
+            }
+            Rectangle { vertical-stretch: 1; }
+            DialogActions {
+                close => { root.close(); }
+                accept => { if root.topic-name != "" { root.subscribe(root.topic-name); } }
+                accept-text: "订阅";
+            }
+        }
+    }
+}

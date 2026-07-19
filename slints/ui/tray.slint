@@ -1,0 +1,22 @@
+export component NsfyTray inherits SystemTrayIcon {
+    icon: @image-url("assets/tray.svg");
+    tooltip: "信鸽 · nsfy 推送提醒";
+    title: "信鸽";
+
+    callback open-requested;
+    callback quit-requested;
+    callback clicked-requested;
+    clicked => { root.clicked-requested(); }
+
+    Menu {
+        MenuItem {
+            title: "打开信鸽";
+            activated => { root.open-requested(); }
+        }
+        MenuSeparator {}
+        MenuItem {
+            title: "退出";
+            activated => { root.quit-requested(); }
+        }
+    }
+}

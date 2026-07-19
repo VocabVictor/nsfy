@@ -1,0 +1,57 @@
+import { LineEdit } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { PillButton } from "common.slint";
+
+export component AppHeader inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> show-actions: true;
+    in-out property <string> search-text;
+    callback open-publish;
+
+    height: 64px;
+    background: Theme.canvas;
+
+    HorizontalLayout {
+        padding-left: 26px;
+        padding-right: 24px;
+        spacing: 10px;
+        alignment: center;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            spacing: 2px;
+            alignment: center;
+            Text { text: root.title; color: Theme.text; font-size: 17px; font-weight: 700; overflow: elide; }
+            Text { text: root.subtitle; color: Theme.text-muted; font-size: 10px; overflow: elide; }
+        }
+        Rectangle {
+            visible: root.show-actions;
+            width: 188px;
+            height: 32px;
+            border-radius: 7px;
+            border-width: 1px;
+            border-color: Theme.border;
+            background: Theme.surface;
+            HorizontalLayout {
+                padding-left: 8px;
+                padding-right: 7px;
+                spacing: 5px;
+                Text {
+                    text: "⌕"; color: Theme.text-faint; font-size: 15px;
+                    vertical-alignment: center;
+                }
+                LineEdit {
+                    text <=> root.search-text;
+                    placeholder-text: "搜索通知";
+                    horizontal-stretch: 1;
+                    font-size: 11px;
+                }
+            }
+        }
+        if root.show-actions: PillButton {
+            text: "发布消息";
+            primary: true;
+            clicked => { root.open-publish(); }
+        }
+    }
+}

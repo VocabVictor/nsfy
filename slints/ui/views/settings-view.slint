@@ -1,0 +1,102 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { PillButton } from "../components/common.slint";
+
+component ToggleRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <bool> enabled;
+    Text { text: root.label; color: Theme.text-secondary; font-size: 11px; vertical-alignment: center; }
+    Rectangle { horizontal-stretch: 1; }
+    Rectangle {
+        width: 39px;
+        height: 22px;
+        border-radius: 11px;
+        background: root.enabled ? Theme.accent : Theme.border-strong;
+        Rectangle {
+            x: root.enabled ? 19px : 3px;
+            y: 3px;
+            width: 16px;
+            height: 16px;
+            border-radius: 8px;
+            background: white;
+        }
+    }
+}
+
+export component SettingsView inherits Rectangle {
+    in property <string> server-address;
+    in property <bool> notifications-enabled;
+    background: Theme.canvas;
+    ScrollView {
+        VerticalLayout {
+            padding: 28px;
+            spacing: 18px;
+            HorizontalLayout {
+                Rectangle { horizontal-stretch: 1; }
+                VerticalLayout {
+                    width: 650px;
+                    spacing: 18px;
+                    Text { text: "连接与通知"; color: Theme.text; font-size: 15px; font-weight: 700; }
+                    Rectangle {
+                        height: 214px;
+                        border-radius: 11px;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        background: Theme.surface;
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 12px;
+                            Text { text: "默认服务器"; color: Theme.text-secondary; font-size: 10px; font-weight: 600; }
+                            Rectangle {
+                                height: 34px;
+                                border-radius: 7px;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                background: Theme.canvas;
+                                Text {
+                                    text: root.server-address; color: Theme.text-secondary;
+                                    font-size: 11px; x: 11px; vertical-alignment: center;
+                                }
+                            }
+                            Rectangle { height: 1px; background: Theme.border; }
+                            ToggleRow { label: "高优先级系统通知"; enabled: root.notifications-enabled; }
+                            ToggleRow { label: "桌面横幅通知"; enabled: false; }
+                        }
+                    }
+                    Text { text: "显示"; color: Theme.text; font-size: 15px; font-weight: 700; }
+                    Rectangle {
+                        height: 114px;
+                        border-radius: 11px;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        background: Theme.surface;
+                        VerticalLayout {
+                            padding: 16px;
+                            spacing: 12px;
+                            HorizontalLayout {
+                                Text {
+                                    text: "默认布局"; color: Theme.text-secondary;
+                                    font-size: 11px; vertical-alignment: center;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                PillButton { text: "分栏排版"; selected: true; }
+                                PillButton { text: "时间线"; }
+                            }
+                            Rectangle { height: 1px; background: Theme.border; }
+                            HorizontalLayout {
+                                Text {
+                                    text: "每个主题保留消息"; color: Theme.text-secondary;
+                                    font-size: 11px; vertical-alignment: center;
+                                }
+                                Rectangle { horizontal-stretch: 1; }
+                                Text { text: "500 条"; color: Theme.text-muted; font-size: 11px; vertical-alignment: center; }
+                            }
+                        }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+    }
+}

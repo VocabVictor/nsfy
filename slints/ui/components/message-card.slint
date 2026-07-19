@@ -1,0 +1,70 @@
+import { Theme } from "../theme.slint";
+import { MessageData } from "../types.slint";
+
+export component MessageCard inherits Rectangle {
+    in property <MessageData> data;
+    in property <bool> show-topic: false;
+
+    height: (data.title == "" ? 72px : 92px) + (data.category == "" ? 0px : 18px);
+    vertical-stretch: 0;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+
+    VerticalLayout {
+        padding: 14px;
+        spacing: 5px;
+
+        HorizontalLayout {
+            spacing: 8px;
+            if show-topic: Rectangle {
+                width: topic-text.preferred-width + 18px;
+                height: 20px;
+                border-radius: 10px;
+                background: Theme.accent-soft;
+                topic-text := Text {
+                    text: data.topic;
+                    color: Theme.accent-hover;
+                    font-size: 10px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+            if data.priority >= 4: Text {
+                text: data.priority >= 5 ? "紧急" : "高";
+                color: data.priority >= 5 ? Theme.danger : Theme.warning;
+                font-size: 10px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: data.time;
+                color: Theme.text-faint;
+                font-size: 10px;
+                vertical-alignment: center;
+            }
+        }
+
+        if data.title != "": Text {
+            text: data.title;
+            color: Theme.text;
+            font-size: 14px;
+            font-weight: 650;
+        }
+        if data.category != "": Text {
+            text: data.category;
+            color: Theme.accent-hover;
+            font-size: 9px;
+        }
+        Text {
+            text: data.body;
+            color: Theme.text-secondary;
+            font-size: 12px;
+            wrap: word-wrap;
+            vertical-stretch: 1;
+        }
+    }
+}

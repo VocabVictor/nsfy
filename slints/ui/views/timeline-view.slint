@@ -1,0 +1,37 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { MessageData } from "../types.slint";
+import { MessageCard } from "../components/message-card.slint";
+import { PillButton } from "../components/common.slint";
+
+export component TimelineView inherits Rectangle {
+    in property <[MessageData]> messages;
+    background: Theme.canvas;
+
+    VerticalLayout {
+        padding-top: 22px;
+        padding-right: 28px;
+        padding-bottom: 26px;
+        padding-left: 28px;
+        spacing: 12px;
+        HorizontalLayout {
+            height: 34px;
+            spacing: 8px;
+            PillButton { text: "全部 5"; selected: true; }
+            PillButton { text: "未读 5"; }
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: "按接收时间排序"; color: Theme.text-faint;
+                font-size: 10px; vertical-alignment: center;
+            }
+        }
+        Text { text: "今天"; color: Theme.text-muted; font-size: 10px; font-weight: 650; }
+        ScrollView {
+            vertical-stretch: 1;
+            VerticalLayout {
+                spacing: 8px;
+                for item in root.messages: MessageCard { data: item; show-topic: true; }
+            }
+        }
+    }
+}
