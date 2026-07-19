@@ -1,0 +1,209 @@
+name: CD - Tagged Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify tag and project versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify version consistency
+        shell: pwsh
+        run: ./scripts/check-release-version.ps1 -ExpectedVersion $env:GITHUB_REF_NAME
+      - name: Enforce 300-line source limit
+        shell: pwsh
+        run: ./scripts/check-source-lines.ps1
+
+  server:
+    name: Package Linux server
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release server
+        run: cargo build --release --locked
+        working-directory: server
+      - name: Stage server binary
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          New-Item -ItemType Directory -Path .release-packages -Force | Out-Null
+          Copy-Item server/target/release/nsfyd ".release-packages/nsfyd-$version-linux-x86_64"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: server-package
+          path: .release-packages/*
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: Package Tauri and Slint for Windows
+    needs: verify
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress --yes
+      - name: Build Windows installers and CLI
+        shell: pwsh
+        run: ./scripts/build-all-packages.ps1 -SkipAndroid -NoBootstrap -OutputDirectory .release-packages
+      - uses: actions/upload-artifact@v6
+        with:
+          name: windows-packages
+          path: .release-packages/*
+          if-no-files-found: error
+          retention-days: 7
+
+  unix-desktop:
+    name: Package desktop for ${{ matrix.platform }}
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            bundles: deb,appimage
+          - os: macos-latest
+            platform: macos
+            bundles: dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev \
+            librsvg2-dev patchelf libgtk-3-dev libxkbcommon-x11-dev
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend dependencies
+        run: npm ci --no-audit --no-fund
+        working-directory: desktop
+      - name: Build Tauri installer
+        run: npm run tauri -- build --bundles "${{ matrix.bundles }}"
+        working-directory: desktop
+      - name: Build Slint application
+        run: cargo build --release --locked
+        working-directory: slints
+      - name: Stage desktop packages
+        shell: bash
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          arch="$(uname -m)"
+          mkdir -p .release-packages
+          if [[ "$PLATFORM" == linux ]]; then
+            deb="$(find desktop/src-tauri/target/release/bundle/deb -maxdepth 1 -name '*.deb' -print -quit)"
+            appimage="$(find desktop/src-tauri/target/release/bundle/appimage -maxdepth 1 -name '*.AppImage' -print -quit)"
+            test -n "$deb" && test -n "$appimage"
+            cp "$deb" ".release-packages/nsfy-tauri-$version-linux-$arch.deb"
+            cp "$appimage" ".release-packages/nsfy-tauri-$version-linux-$arch.AppImage"
+          else
+            dmg="$(find desktop/src-tauri/target/release/bundle/dmg -maxdepth 1 -name '*.dmg' -print -quit)"
+            test -n "$dmg"
+            cp "$dmg" ".release-packages/nsfy-tauri-$version-macos-$arch.dmg"
+          fi
+          tar -czf ".release-packages/nsfy-cli-$version-$PLATFORM-$arch.tar.gz" \
+            -C desktop/src-tauri/target/release nsfy-cli
+          tar -czf ".release-packages/nsfy-slint-$version-$PLATFORM-$arch.tar.gz" \
+            -C slints/target/release nsfy-desktop-slint
+      - uses: actions/upload-artifact@v6
+        with:
+          name: desktop-${{ matrix.platform }}-packages
+          path: .release-packages/*
+          if-no-files-found: error
+          retention-days: 7
+
+  android:
+    name: Package Android application
+    needs: verify
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.9'
+      - name: Build installable APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p .release-packages
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" && -n "$ANDROID_STORE_PASSWORD" && -n "$ANDROID_KEY_ALIAS" && -n "$ANDROID_KEY_PASSWORD" ]]; then
+            keystore="$RUNNER_TEMP/nsfy-release.jks"
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+            printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$keystore" "$ANDROID_STORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD" \
+              > android/keystore.properties
+            gradle -p android testDebugUnitTest assembleRelease --no-daemon
+            cp android/app/build/outputs/apk/release/app-release.apk \
+              ".release-packages/nsfy-android-$version-release.apk"
+          else
+            echo 'Android signing secrets are absent; producing an installable debug-signed alpha APK.'
+            gradle -p android testDebugUnitTest assembleDebug --no-daemon
+            cp android/app/build/outputs/apk/debug/app-debug.apk \
+              ".release-packages/nsfy-android-$version-debug.apk"
+          fi
+      - uses: actions/upload-artifact@v6
+        with:
+          name: android-package
+          path: .release-packages/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub prerelease
+    needs: [server, windows, unix-desktop, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Generate combined checksums
+        shell: bash
+        run: |
+          cd artifacts
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' \
+            | sort | xargs sha256sum > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: NSFY ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: artifacts/*
