@@ -10,6 +10,8 @@ fn msg(id: &str, time: i64, body: &str) -> Message {
         priority: 3,
         tags: vec!["tag1".to_string()],
         category: vec!["ops".to_string(), "backup".to_string()],
+        popup: true,
+        bypass_dnd: true,
     }
 }
 
@@ -44,6 +46,8 @@ fn load_all_round_trips_fields_including_tags() {
         msgs[0].category,
         vec!["ops".to_string(), "backup".to_string()]
     );
+    assert!(msgs[0].popup);
+    assert!(msgs[0].bypass_dnd);
 }
 
 #[test]

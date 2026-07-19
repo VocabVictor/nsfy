@@ -14,6 +14,8 @@ export interface TrashMessage {
   priority: number;
   tags: string[];
   category: string[];
+  popup: boolean;
+  bypassDnd: boolean;
   read: boolean;
   deletedAt: number;
 }

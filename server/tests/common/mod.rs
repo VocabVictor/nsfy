@@ -97,6 +97,8 @@ pub fn message(body: &str) -> serde_json::Value {
         "title": "protocol test",
         "message": body,
         "priority": 4,
+        "popup": true,
+        "bypassDnd": true,
         "tags": ["test"],
         "category": ["qa", "protocol"]
     })

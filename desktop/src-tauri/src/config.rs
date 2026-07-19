@@ -11,6 +11,8 @@ pub struct StoredConfig {
     pub topics: Vec<StoredTopic>,
     #[serde(default)]
     pub popup_on_notify: bool,
+    #[serde(default)]
+    pub notification_mode: String,
     #[serde(default = "default_popup_position")]
     pub popup_position: String,
     #[serde(default = "default_layout_mode")]
@@ -19,6 +21,8 @@ pub struct StoredConfig {
     pub window_behavior: String,
     #[serde(default)]
     pub do_not_disturb: bool,
+    #[serde(default)]
+    pub dnd_allowed_priorities: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,10 +51,12 @@ impl Default for StoredConfig {
             }],
             topics: Vec::new(),
             popup_on_notify: false,
+            notification_mode: default_notification_mode(),
             popup_position: default_popup_position(),
             layout_mode: default_layout_mode(),
             window_behavior: default_window_behavior(),
             do_not_disturb: false,
+            dnd_allowed_priorities: Vec::new(),
         }
     }
 }
@@ -160,6 +166,10 @@ pub fn parse_category(value: Option<&str>) -> Result<Vec<String>, String> {
 
 fn default_popup_position() -> String {
     "top-right".into()
+}
+
+fn default_notification_mode() -> String {
+    "system".into()
 }
 
 fn default_layout_mode() -> String {

@@ -106,6 +106,12 @@ struct PublishArgs {
     /// Slash-separated category path, for example work/agents/codex.
     #[arg(long)]
     category: Option<String>,
+    /// Ask receiving clients to show a notification popup.
+    #[arg(long)]
+    popup: bool,
+    /// Allow this popup to bypass receivers' do-not-disturb mode.
+    #[arg(long, requires = "popup")]
+    bypass_dnd: bool,
 }
 
 pub fn run() -> Result<(), String> {
@@ -220,6 +226,8 @@ fn publish(args: PublishArgs) -> Result<(), String> {
             "priority": args.priority,
             "tags": args.tags,
             "category": category,
+            "popup": args.popup,
+            "bypassDnd": args.bypass_dnd,
         }))
         .send()
         .map_err(|e| e.to_string())?;

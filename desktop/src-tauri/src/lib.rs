@@ -27,7 +27,7 @@ pub struct PopupContent {
 
 /// Compact notification center: a small, borderless, always-on-top window
 /// at a corner (or center) of the screen listing the latest messages,
-/// closing itself after a few seconds. Separate from the main window
+/// optionally closing itself after a few seconds. Separate from the main window
 /// entirely, so it never requires bringing the whole app to the front.
 #[tauri::command]
 async fn show_notification_popup(
@@ -35,6 +35,7 @@ async fn show_notification_popup(
     state: tauri::State<'_, AppState>,
     messages: Vec<PopupContent>,
     position: String,
+    persistent: bool,
 ) -> Result<(), String> {
     // A burst of messages shouldn't stack up multiple banners — replace
     // whichever one is still showing.
@@ -103,11 +104,13 @@ async fn show_notification_popup(
         .build()
         .map_err(|e| e.to_string())?;
 
-    let popup_clone = popup.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        let _ = popup_clone.close();
-    });
+    if !persistent {
+        let popup_clone = popup.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let _ = popup_clone.close();
+        });
+    }
 
     Ok(())
 }

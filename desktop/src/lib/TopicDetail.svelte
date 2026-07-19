@@ -11,6 +11,8 @@
   let newMsg = $state('');
   let replyTitle = $state('');
   let replyCategory = $state('');
+  let replyPopup = $state(false);
+  let replyBypassDnd = $state(false);
   let selectedCategory = $state('');
 
   const categoryChoices = $derived(categoryOptions(topic?.messages || []));
@@ -39,10 +41,14 @@
           message: newMsg.trim(),
           priority: 3,
           category: replyCategory.split('/').map(s => s.trim()).filter(Boolean),
+          popup: replyPopup,
+          bypassDnd: replyBypassDnd,
         }),
       });
       newMsg = '';
       replyTitle = '';
+      replyPopup = false;
+      replyBypassDnd = false;
     } catch (e) {
       console.error('publish failed', e);
     }
@@ -114,6 +120,13 @@
     <div class="input-meta">
       <input class="title-input" type="text" placeholder="标题（可选）" bind:value={replyTitle} />
       <input class="category-input" type="text" placeholder="分类，如 工作/Agent" bind:value={replyCategory} />
+    </div>
+    <div class="delivery-options">
+      <label><input type="checkbox" checked={replyPopup}
+        onchange={(event) => { replyPopup = event.currentTarget.checked; if (!replyPopup) replyBypassDnd = false; }} /> 弹窗通知</label>
+      <label class:disabled={!replyPopup}>
+        <input type="checkbox" bind:checked={replyBypassDnd} disabled={!replyPopup} /> 无视勿扰
+      </label>
     </div>
     <div class="msg-row">
       <input
@@ -188,6 +201,10 @@
   }
   .title-input:focus, .category-input:focus { border-color: var(--border-strong); }
   .title-input::placeholder, .category-input::placeholder { color: var(--text-4); }
+  .delivery-options { display: flex; gap: 16px; color: var(--text-3); font-size: 11px; }
+  .delivery-options label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .delivery-options input { accent-color: var(--accent); }
+  .delivery-options label.disabled { color: var(--text-4); cursor: default; }
   .msg-row { display: flex; gap: 8px; align-items: center; }
   .msg-input {
     flex: 1; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-md);

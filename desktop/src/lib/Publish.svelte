@@ -9,6 +9,8 @@
   let message = $state('');
   let categoryPath = $state('');
   let priority = $state(3);
+  let popup = $state(false);
+  let bypassDnd = $state(false);
   let status = $state<'idle' | 'sending' | 'sent' | 'error'>('idle');
   let statusMsg = $state('');
 
@@ -35,6 +37,8 @@
       priority,
       tags: [],
       category: categoryPath.split('/').map(s => s.trim()).filter(Boolean),
+      popup,
+      bypassDnd,
     });
     const res = await fetch(`${serverUrl}/${t}`, {
       method: 'POST',
@@ -51,7 +55,7 @@
     try {
       await post();
       status = 'sent'; statusMsg = '已发布';
-      message = ''; title = ''; categoryPath = '';
+      message = ''; title = ''; categoryPath = ''; popup = false; bypassDnd = false;
       setTimeout(() => { status = 'idle'; onclose?.(); }, 1200);
     } catch (e) {
       status = 'error'; statusMsg = '发布失败';
@@ -102,6 +106,13 @@
         {/each}
       </div>
     </div>
+    <div class="delivery-row">
+      <label><input type="checkbox" checked={popup}
+        onchange={(event) => { popup = event.currentTarget.checked; if (!popup) bypassDnd = false; }} /> 弹窗通知</label>
+      <label class:disabled={!popup}>
+        <input type="checkbox" bind:checked={bypassDnd} disabled={!popup} /> 无视勿扰模式
+      </label>
+    </div>
     <div class="actions">
       {#if status !== 'idle'}
         <span class="status" class:err={status === 'error'}>{statusMsg}</span>
@@ -148,6 +159,10 @@
     color: var(--accent-ink); font-weight: 600;
   }
   .pri-btn.danger { background: var(--danger); border-color: var(--danger); }
+  .delivery-row { display: flex; gap: 20px; padding: 2px 0; }
+  .delivery-row label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+  .delivery-row input { width: 15px; padding: 0; accent-color: var(--accent); }
+  .delivery-row label.disabled { color: var(--text-4); cursor: default; }
 
   .actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
   .status { font-size: 12px; color: var(--success); }

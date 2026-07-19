@@ -30,7 +30,8 @@ nsfy-cli topic remove --server Tencent --topic agents
 # 发布、拉取和状态
 nsfy-cli publish --server Tencent --topic agents `
   --title "Codex" --message "任务完成" --priority 4 `
-  --category "开发/Agent/Codex" --tag hook --tag completed
+  --category "开发/Agent/Codex" --tag hook --tag completed `
+  --popup --bypass-dnd
 nsfy-cli poll --server Tencent --topic agents
 nsfy-cli status --server Tencent
 nsfy-cli config-path
@@ -83,10 +84,15 @@ HTTP 消息中的 `category` 是一个有顺序的字符串数组：
   "title": "任务完成",
   "message": "安装包已生成",
   "priority": 4,
+  "popup": true,
+  "bypassDnd": true,
   "tags": ["hook", "completed"],
   "category": ["开发", "Agent", "Codex"]
 }
 ```
+
+`popup` 决定接收端是否应显示通知，`bypassDnd` 允许该通知无视勿扰模式。
+未发送 `popup` 的旧客户端继续按兼容规则处理：高和紧急优先级默认弹窗。
 
 GUI 和 CLI 输入使用 `/` 分隔层级。桌面端和 Android 时间线可以选择任意父级，
 查看该分类及其所有子分类。旧消息没有 `category` 时仍按“未分类”处理。

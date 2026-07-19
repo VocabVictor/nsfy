@@ -55,6 +55,8 @@ fn legacy_database_is_migrated_without_losing_messages() {
         .unwrap();
     assert_eq!(messages[0]["message"], "kept");
     assert_eq!(messages[0]["category"], serde_json::json!([]));
+    assert_eq!(messages[0]["popup"], false);
+    assert_eq!(messages[0]["bypassDnd"], false);
 }
 
 #[test]

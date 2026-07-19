@@ -45,19 +45,34 @@ impl Store {
                 priority INTEGER NOT NULL,
                 tags     TEXT NOT NULL,
                 category TEXT NOT NULL DEFAULT '[]',
+                popup    INTEGER NOT NULL DEFAULT 0,
+                bypass_dnd INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (topic, id)
             );
             CREATE INDEX IF NOT EXISTS idx_messages_topic_time ON messages(topic, time);",
         )?;
-        let has_category = {
+        let columns = {
             let mut stmt = conn.prepare("PRAGMA table_info(messages)")?;
             let columns: rusqlite::Result<Vec<String>> =
                 stmt.query_map([], |row| row.get(1))?.collect();
-            columns?.iter().any(|name| name == "category")
+            columns?
         };
-        if !has_category {
+        if !columns.iter().any(|name| name == "category") {
             conn.execute(
                 "ALTER TABLE messages ADD COLUMN category TEXT NOT NULL DEFAULT '[]'",
+                [],
+            )?;
+        }
+        if !columns.iter().any(|name| name == "popup") {
+            conn.execute(
+                "ALTER TABLE messages ADD COLUMN popup INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+            conn.execute("UPDATE messages SET popup = priority >= 4", [])?;
+        }
+        if !columns.iter().any(|name| name == "bypass_dnd") {
+            conn.execute(
+                "ALTER TABLE messages ADD COLUMN bypass_dnd INTEGER NOT NULL DEFAULT 0",
                 [],
             )?;
         }
@@ -86,8 +101,8 @@ impl Store {
         {
             let mut insert = tx.prepare_cached(
                 "INSERT OR REPLACE INTO messages
-                 (topic, id, time, title, message, priority, tags, category)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                 (topic, id, time, title, message, priority, tags, category, popup, bypass_dnd)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             )?;
             for (topic, msg, _) in writes {
                 let tags = serde_json::to_string(&msg.tags).unwrap_or_default();
@@ -100,7 +115,9 @@ impl Store {
                     msg.message,
                     msg.priority,
                     tags,
-                    category
+                    category,
+                    msg.popup,
+                    msg.bypass_dnd
                 ])?;
             }
         }
@@ -135,7 +152,7 @@ impl Store {
         let mut out = Vec::with_capacity(topics.len());
         for topic in topics {
             let mut stmt = conn.prepare(
-                "SELECT id, time, title, message, priority, tags, category FROM messages
+                "SELECT id, time, title, message, priority, tags, category, popup, bypass_dnd FROM messages
                  WHERE topic = ?1 ORDER BY time DESC LIMIT ?2",
             )?;
             let mut rows: Vec<Message> = stmt
@@ -152,6 +169,8 @@ impl Store {
                             let value: String = row.get(6)?;
                             serde_json::from_str(&value).unwrap_or_default()
                         },
+                        popup: row.get(7)?,
+                        bypass_dnd: row.get(8)?,
                     })
                 })?
                 .collect::<rusqlite::Result<_>>()?;

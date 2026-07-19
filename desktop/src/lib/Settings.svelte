@@ -1,8 +1,8 @@
 <script lang="ts">
   import {
     servers, topics, addServer, removeServer, setServerToken,
-    doNotDisturb, layoutMode, popupOnNotify, popupPosition, windowBehavior,
-    savePreferences, type LayoutMode, type PopupPosition, type WindowBehavior,
+    dndAllowedPriorities, doNotDisturb, layoutMode, notificationMode, popupPosition, windowBehavior,
+    savePreferences, type LayoutMode, type NotificationMode, type PopupPosition, type WindowBehavior,
   } from './stores/nsfy';
   import NotificationSettings from './NotificationSettings.svelte';
 
@@ -16,7 +16,8 @@
   let draftLayout = $state<LayoutMode>('split');
   let draftWindow = $state<WindowBehavior>('resident');
   let draftDnd = $state(false);
-  let draftBanner = $state(false);
+  let draftDndPriorities = $state<number[]>([]);
+  let draftNotificationMode = $state<NotificationMode>('system');
   let draftPosition = $state<PopupPosition>('top-right');
   let dirty = $state(false);
   let saved = $state(false);
@@ -26,7 +27,8 @@
     draftLayout = $layoutMode;
     draftWindow = $windowBehavior;
     draftDnd = $doNotDisturb;
-    draftBanner = $popupOnNotify;
+    draftDndPriorities = [...$dndAllowedPriorities];
+    draftNotificationMode = $notificationMode;
     draftPosition = $popupPosition;
   });
 
@@ -38,7 +40,8 @@
   function saveSettings() {
     savePreferences({
       layoutMode: draftLayout, windowBehavior: draftWindow,
-      doNotDisturb: draftDnd, popupOnNotify: draftBanner,
+      doNotDisturb: draftDnd, notificationMode: draftNotificationMode,
+      dndAllowedPriorities: draftDndPriorities,
       popupPosition: draftPosition,
     });
     dirty = false;
@@ -154,7 +157,8 @@
 
   <NotificationSettings
     bind:windowBehavior={draftWindow} bind:doNotDisturb={draftDnd}
-    bind:popupOnNotify={draftBanner} bind:popupPosition={draftPosition}
+    bind:dndAllowedPriorities={draftDndPriorities}
+    bind:notificationMode={draftNotificationMode} bind:popupPosition={draftPosition}
     onchange={changed}
   />
 

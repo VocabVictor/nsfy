@@ -1,8 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 import { sendNotification } from '@tauri-apps/plugin-notification';
 import { get } from 'svelte/store';
+import { selectPresentation, shouldPresentNotification } from './notification-policy';
 import {
-  doNotDisturb, popupOnNotify, popupPosition, topics, windowBehavior,
+  dndAllowedPriorities, doNotDisturb, notificationMode, popupPosition, topics, windowBehavior,
   type Message,
 } from './stores/nsfy';
 
@@ -12,22 +13,27 @@ export function handleIncomingNotification(
   permissionGranted: boolean,
   fresh: boolean,
 ) {
-  if (get(doNotDisturb)) return;
+  const dnd = get(doNotDisturb);
+  const allowed = get(dndAllowedPriorities);
+  if (!fresh || !shouldPresentNotification(message, dnd, allowed)) return;
 
-  if (fresh && get(windowBehavior) === 'popup') {
+  const presentation = selectPresentation(
+    get(notificationMode), get(windowBehavior), permissionGranted);
+  if (presentation === 'none') return;
+  if (presentation === 'main') {
     invoke('focus_main_window').catch(() => {});
+    return;
   }
-
-  if (!fresh || message.priority < 4) return;
-  if (permissionGranted) {
+  if (presentation === 'system') {
     sendNotification({ title: message.title || topicName, body: message.message });
+    return;
   }
-  if (!get(popupOnNotify) || get(windowBehavior) === 'popup') return;
 
   const recent = get(topics)
     .flatMap(topic => {
-      const high = topic.messages.filter(item => item.priority >= 4);
-      return high.length ? [{ ...high[high.length - 1], topicName: topic.name }] : [];
+      const alerting = topic.messages.filter(item =>
+        shouldPresentNotification(item, dnd, allowed));
+      return alerting.length ? [{ ...alerting[alerting.length - 1], topicName: topic.name }] : [];
     })
     .sort((a, b) => b.time - a.time)
     .slice(0, 3)
@@ -46,5 +52,6 @@ export function handleIncomingNotification(
       priority: message.priority,
     }],
     position: get(popupPosition),
+    persistent: presentation === 'persistent',
   }).catch(() => {});
 }

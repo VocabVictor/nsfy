@@ -7,7 +7,7 @@ import {
 } from './message-state';
 import { initializeMessageState, moveToTrash, takeFromTrash, trashContains } from './trash-store';
 import {
-  doNotDisturb, layoutMode, popupOnNotify, popupPosition, windowBehavior,
+  dndAllowedPriorities, doNotDisturb, layoutMode, notificationMode, popupPosition, windowBehavior,
   setPreferencePersistence,
 } from './preferences';
 export { normalizeServerUrl } from '../server-url';
@@ -24,6 +24,8 @@ export interface Message {
   priority: number;
   tags: string[];
   category: string[];
+  popup: boolean;
+  bypassDnd: boolean;
   read: boolean;
 }
 
@@ -69,13 +71,21 @@ export async function loadState() {
       ...t, connected: false, unread: 0, messages: [],
     })));
   }
-  if (typeof data?.popupOnNotify === 'boolean') popupOnNotify.set(data.popupOnNotify);
+  if (['silent', 'system', 'temporary', 'persistent'].includes(data?.notificationMode)) {
+    notificationMode.set(data.notificationMode);
+  } else if (data?.popupOnNotify === true) {
+    notificationMode.set('temporary');
+  }
   if (typeof data?.popupPosition === 'string') popupPosition.set(data.popupPosition);
   if (data?.layoutMode === 'split' || data?.layoutMode === 'timeline') layoutMode.set(data.layoutMode);
   if (data?.windowBehavior === 'popup' || data?.windowBehavior === 'resident') {
     windowBehavior.set(data.windowBehavior);
   }
   if (typeof data?.doNotDisturb === 'boolean') doNotDisturb.set(data.doNotDisturb);
+  if (Array.isArray(data?.dndAllowedPriorities)) {
+    dndAllowedPriorities.set(data.dndAllowedPriorities.filter((value: unknown) =>
+      Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 5));
+  }
   if (get(servers).length === 0) {
     servers.set([{ url: 'http://localhost:8080', name: 'Local' }]);
   }
@@ -88,11 +98,13 @@ export function persistState() {
   const state = {
     servers: s,
     topics: t.map(t => ({ name: t.name, server: t.server, unread: t.unread })),
-    popupOnNotify: get(popupOnNotify),
+    notificationMode: get(notificationMode),
+    popupOnNotify: ['temporary', 'persistent'].includes(get(notificationMode)),
     popupPosition: get(popupPosition),
     layoutMode: get(layoutMode),
     windowBehavior: get(windowBehavior),
     doNotDisturb: get(doNotDisturb),
+    dndAllowedPriorities: get(dndAllowedPriorities),
   };
   localStorage.setItem('nsfy-state', JSON.stringify(state));
   invoke('save_shared_config', { config: state }).catch(() => {});
@@ -239,7 +251,8 @@ export function restoreTrashMessages(refs: MessageRef[]) {
     const existing = new Set(t.messages.map(m => m.id));
     const merged = [...t.messages, ...messages.filter(m => !existing.has(m.id)).map(m => ({
       id: m.id, time: m.time, title: m.title, message: m.message,
-      priority: m.priority, tags: m.tags, category: m.category, read: true,
+      priority: m.priority, tags: m.tags, category: m.category,
+      popup: m.popup, bypassDnd: m.bypassDnd, read: true,
     }))].sort((a, b) => a.time - b.time).slice(-500);
     return { ...t, messages: merged };
   }));

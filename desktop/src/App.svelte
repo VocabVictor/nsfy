@@ -80,6 +80,8 @@
         try {
           const msg = JSON.parse(e.data);
           if (!Array.isArray(msg.category)) msg.category = [];
+          if (typeof msg.popup !== 'boolean') msg.popup = msg.priority >= 4;
+          if (typeof msg.bypassDnd !== 'boolean') msg.bypassDnd = false;
           addMessage(name, server, msg);
           handleIncomingNotification(name, msg, notifyPermission, msg.time >= connectedAt - 2);
         } catch {}

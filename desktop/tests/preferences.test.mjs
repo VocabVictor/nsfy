@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { get } from 'svelte/store';
 import {
+  dndAllowedPriorities,
   doNotDisturb,
+  notificationMode,
   setDoNotDisturb,
   setPreferencePersistence,
   savePreferences,
@@ -35,8 +37,11 @@ test('saving a settings draft persists once', () => {
   setPreferencePersistence(() => saves++);
   savePreferences({
     layoutMode: 'timeline', windowBehavior: 'resident', doNotDisturb: false,
-    popupOnNotify: true, popupPosition: 'bottom-right',
+    dndAllowedPriorities: [4, 5],
+    notificationMode: 'persistent', popupPosition: 'bottom-right',
   });
 
   assert.equal(saves, 1);
+  assert.deepEqual(get(dndAllowedPriorities), [4, 5]);
+  assert.equal(get(notificationMode), 'persistent');
 });

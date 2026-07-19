@@ -34,6 +34,8 @@ fn publish_poll_and_since_round_trip_all_fields() {
         .unwrap();
     assert_eq!(all.len(), 2);
     assert_eq!(all[0]["category"], serde_json::json!(["qa", "protocol"]));
+    assert_eq!(all[0]["popup"], true);
+    assert_eq!(all[0]["bypassDnd"], true);
     let since: Vec<Value> = server
         .request(client.get(format!(
             "{}/alerts/json?since={}",
@@ -45,6 +47,21 @@ fn publish_poll_and_since_round_trip_all_fields() {
         .json()
         .unwrap();
     assert_eq!(since, vec![second]);
+}
+
+#[test]
+fn legacy_high_priority_publish_defaults_to_popup_without_bypassing_dnd() {
+    let server = TestServer::fresh();
+    let body = serde_json::json!({ "message": "legacy", "priority": 4 });
+    let value: Value = server
+        .request(Client::new().post(format!("{}/alerts", server.base_url)))
+        .json(&body)
+        .send()
+        .unwrap()
+        .json()
+        .unwrap();
+    assert_eq!(value["popup"], true);
+    assert_eq!(value["bypassDnd"], false);
 }
 
 #[test]
