@@ -1,6 +1,6 @@
 [package]
 name = "nsfyd"
-version = "0.1.0"
+version = "0.0.1-alpha"
 edition = "2021"
 description = "A minimal, high-performance pub-sub notification server — the nsfy backend"
 license = "MIT"

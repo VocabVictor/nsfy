@@ -55,6 +55,11 @@ $version = [string]$tauriConfig.version
 if ([string]$packageJson.version -ne $version) {
     throw "desktop/package.json 与 tauri.conf.json 的版本号不一致。"
 }
+$buildMsi = -not $version.Contains("-")
+$bundleTargets = if ($buildMsi) { "nsis,msi" } else { "nsis" }
+if (-not $buildMsi) {
+    Write-Host "预发布版本不生成 MSI（WiX 不接受 alpha 等非数字预发布标识）；仍生成 NSIS 安装包。" -ForegroundColor Yellow
+}
 
 $npm = Get-Command npm.cmd -ErrorAction Stop | Select-Object -First 1
 Get-Command cargo.exe -ErrorAction Stop | Out-Null
@@ -67,25 +72,30 @@ try {
     if (-not $SkipBuild) {
         Write-Host "[Tauri 1/2] 安装前端依赖..." -ForegroundColor Cyan
         Invoke-NativeCommand $npm.Source ci --no-audit --no-fund
-        Write-Host "[Tauri 2/2] 编译 GUI、CLI 并生成 NSIS/MSI 安装包..." -ForegroundColor Cyan
+        Write-Host "[Tauri 2/2] 编译 GUI、CLI 并生成 $bundleTargets 安装包..." -ForegroundColor Cyan
         Invoke-NativeCommand -Command $npm.Source -Arguments @(
-            "run", "tauri", "--", "build", "--bundles", "nsis,msi"
+            "run", "tauri", "--", "build", "--bundles", $bundleTargets
         )
     }
 
     $bundleRoot = Join-Path $packageTarget "release\bundle"
-    $nsis = Get-ChildItem -LiteralPath (Join-Path $bundleRoot "nsis") -Filter "nsfy_${version}_*-setup.exe" -File -ErrorAction SilentlyContinue |
+    $nsis = Get-ChildItem -LiteralPath (Join-Path $bundleRoot "nsis") -Filter "nsfy_*-setup.exe" -File -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    $msi = Get-ChildItem -LiteralPath (Join-Path $bundleRoot "msi") -Filter "nsfy_${version}_*.msi" -File -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $nsis -or -not $msi) {
-        throw "未找到 Tauri $version 的 NSIS 和 MSI 安装包。"
+    $msi = if ($buildMsi) {
+        Get-ChildItem -LiteralPath (Join-Path $bundleRoot "msi") -Filter "nsfy_*.msi" -File -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    } else { $null }
+    if (-not $nsis -or ($buildMsi -and -not $msi)) {
+        throw "未找到 Tauri $version 的预期安装包。"
     }
 
     $nsisOutput = Join-Path $outputPath "nsfy-tauri-$version-windows-x64-setup.exe"
-    $msiOutput = Join-Path $outputPath "nsfy-tauri-$version-windows-x64.msi"
     Copy-Item -LiteralPath $nsis.FullName -Destination $nsisOutput -Force
-    Copy-Item -LiteralPath $msi.FullName -Destination $msiOutput -Force
+    if ($msi) {
+        $msiOutput = Join-Path $outputPath "nsfy-tauri-$version-windows-x64.msi"
+        Copy-Item -LiteralPath $msi.FullName -Destination $msiOutput -Force
+        Write-Host "Tauri 安装包：$msiOutput" -ForegroundColor Green
+    }
     $cliSource = Join-Path $packageTarget "release\nsfy-cli.exe"
     if (-not (Test-Path -LiteralPath $cliSource)) {
         throw "未找到 Tauri CLI：$cliSource"
@@ -93,7 +103,6 @@ try {
     $cliOutput = Join-Path $outputPath "nsfy-cli-$version-windows-x64.exe"
     Copy-Item -LiteralPath $cliSource -Destination $cliOutput -Force
     Write-Host "Tauri 安装包：$nsisOutput" -ForegroundColor Green
-    Write-Host "Tauri 安装包：$msiOutput" -ForegroundColor Green
     Write-Host "Tauri CLI：$cliOutput" -ForegroundColor Green
 } finally {
     Pop-Location

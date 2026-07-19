@@ -8,7 +8,7 @@
 
 脚本会依次构建：
 
-- Tauri 桌面端：NSIS `.exe` 和 MSI `.msi`
+- Tauri 桌面端：NSIS `.exe` 和 MSI `.msi`（alpha 等预发布版本只生成 NSIS）
 - Tauri 命令行端：独立的 `nsfy-cli-*.exe`，同时嵌入桌面安装包
 - Android：签名 release `.apk`
 - Slint 桌面端：Inno Setup `.exe`
@@ -38,3 +38,20 @@ Android 默认要求本机存在已被 Git 忽略的 `android/keystore.propertie
 
 如果 `-OutputDirectory` 指向当前 Git 仓库内部，脚本会在构建前使用
 `git check-ignore` 校验该目录；未被忽略时会直接终止，防止安装包被误提交。
+
+## CI/CD
+
+- 推送到 `main` 或创建 Pull Request 时，CI 会测试服务器、Tauri、Android、
+  Slint，并在 `main` 上运行完整服务器性能测试；CI 不发布安装包。
+- CD 只响应 `v*` Tag。它会先检查 Tag 与各端版本完全一致，再生成 Linux
+  服务器、Windows/macOS/Linux 桌面端、桌面 CLI、Slint 和 Android 产物，
+  最后创建 GitHub Release 和 `SHA256SUMS.txt`。
+- Android 配置四个签名 Secrets 后生成正式签名 APK；缺少时 alpha CD 会生成
+  可安装的 debug 签名 APK，并在文件名中明确标记 `debug`。
+
+发布当前 alpha 版本：
+
+```powershell
+git tag -a v0.0.1-alpha -m "NSFY 0.0.1 alpha"
+git push origin v0.0.1-alpha
+```
