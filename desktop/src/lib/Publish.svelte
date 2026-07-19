@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { servers, topics, withAuth } from './stores/nsfy';
+  import { authHeaders, servers, topics } from './stores/nsfy';
 
   let { onclose }: { onclose?: () => void } = $props();
 
@@ -7,10 +7,9 @@
   let topicName = $state('');
   let title = $state('');
   let message = $state('');
+  let categoryPath = $state('');
   let priority = $state(3);
-  let scheduleAt = $state('');
-  let attachName = $state('');
-  let status = $state<'idle' | 'sending' | 'scheduled' | 'sent' | 'error'>('idle');
+  let status = $state<'idle' | 'sending' | 'sent' | 'error'>('idle');
   let statusMsg = $state('');
 
   const serverTopics = $derived($topics.filter(t => t.server === serverUrl));
@@ -28,23 +27,18 @@
     serverUrl = $servers[0].url;
   });
 
-  function onAttach(e: Event) {
-    const input = e.target as HTMLInputElement;
-    attachName = input.files?.[0]?.name || '';
-  }
-
   async function post() {
     const t = topicName.trim() || 'default';
-    const tags = attachName ? [`附件:${attachName}`] : [];
     const body = JSON.stringify({
       title: title.trim(),
       message: message.trim(),
       priority,
-      tags,
+      tags: [],
+      category: categoryPath.split('/').map(s => s.trim()).filter(Boolean),
     });
-    const res = await fetch(withAuth(`${serverUrl}/${t}`, serverUrl), {
+    const res = await fetch(`${serverUrl}/${t}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(serverUrl) },
       body,
     });
     if (!res.ok) throw new Error(`server returned ${res.status}`);
@@ -52,21 +46,12 @@
 
   async function doPublish() {
     if (!message.trim() || !serverUrl) return;
-    const delay = scheduleAt ? new Date(scheduleAt).getTime() - Date.now() : 0;
-    if (delay > 0) {
-      // Simple client-side scheduling: fires while the app stays open.
-      status = 'scheduled';
-      statusMsg = `已定时，${new Date(scheduleAt).toLocaleString('zh-CN')} 发送`;
-      setTimeout(() => { post().catch(() => {}); }, delay);
-      setTimeout(() => { status = 'idle'; onclose?.(); }, 1500);
-      return;
-    }
     status = 'sending';
     statusMsg = '发布中…';
     try {
       await post();
       status = 'sent'; statusMsg = '已发布';
-      message = ''; title = ''; attachName = ''; scheduleAt = '';
+      message = ''; title = ''; categoryPath = '';
       setTimeout(() => { status = 'idle'; onclose?.(); }, 1200);
     } catch (e) {
       status = 'error'; statusMsg = '发布失败';
@@ -98,6 +83,10 @@
       <input id="pub-title" type="text" placeholder="一句话说明发生了什么" bind:value={title} />
     </div>
     <div class="row">
+      <label for="pub-category">多级分类</label>
+      <input id="pub-category" type="text" placeholder="工作/Agent/Codex" bind:value={categoryPath} />
+    </div>
+    <div class="row">
       <label for="pub-message">内容</label>
       <textarea id="pub-message" placeholder="磁盘清理脚本已执行，/var 回落至 71%…" bind:value={message} rows="4"></textarea>
     </div>
@@ -113,21 +102,6 @@
         {/each}
       </div>
     </div>
-    <div class="row inline-row">
-      <div class="inline-field">
-        <label for="pub-schedule">定时发送</label>
-        <input id="pub-schedule" type="datetime-local" bind:value={scheduleAt} />
-      </div>
-      <div class="inline-field">
-        <span class="row-label">附件</span>
-        <label class="attach-btn">
-          <svg viewBox="0 0 16 16" fill="none" width="13" height="13"><path d="M13 7.5 8.2 12.3a3.2 3.2 0 0 1-4.5-4.5L8.5 3a2.1 2.1 0 0 1 3 3l-4.6 4.6a1 1 0 0 1-1.5-1.5L9.6 5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-          {attachName || '选择文件'}
-          <input type="file" onchange={onAttach} hidden />
-        </label>
-      </div>
-    </div>
-
     <div class="actions">
       {#if status !== 'idle'}
         <span class="status" class:err={status === 'error'}>{statusMsg}</span>
@@ -174,16 +148,6 @@
     color: var(--accent-ink); font-weight: 600;
   }
   .pri-btn.danger { background: var(--danger); border-color: var(--danger); }
-
-  .inline-row { flex-direction: row; gap: 12px; }
-  .inline-field { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-  .attach-btn {
-    display: flex; align-items: center; gap: 6px;
-    background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-md);
-    padding: 9px 12px; color: var(--text-2); font-size: 13px; cursor: pointer;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .attach-btn:hover { border-color: var(--border-strong); }
 
   .actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
   .status { font-size: 12px; color: var(--success); }

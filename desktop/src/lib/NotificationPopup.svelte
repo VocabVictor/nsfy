@@ -160,7 +160,7 @@
   .row-time { font-size: 10px; color: #9ca3af; flex-shrink: 0; }
   .row-body {
     font-size: 11px; color: #6b7280; line-height: 1.4; margin-top: 2px;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    display: -webkit-box; line-clamp: 2; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   .dnd-note {
     padding: 20px 0; text-align: center;

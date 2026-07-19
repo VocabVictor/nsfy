@@ -1,13 +1,16 @@
 <script lang="ts">
   import {
     topics, activeTopic, layoutMode, markRead,
+    markAllRead,
     fmtTime, dateGroup, topicColor, priorityColor, priorityLabel,
+    categoryOptions, matchesCategory,
     type Message,
   } from './stores/nsfy';
 
   type TimelineItem = Message & { topicName: string; server: string };
 
   let filter = $state<'all' | 'unread'>('all');
+  let selectedCategory = $state('');
 
   // Flatten all topics' messages into one stream, newest first.
   const items = $derived(
@@ -17,13 +20,15 @@
   );
 
   const unreadCount = $derived($topics.reduce((n, t) => n + t.unread, 0));
+  const categoryChoices = $derived(categoryOptions(items));
 
   // Unread topics: those with unread > 0. Per-message read state is not
   // tracked, so the unread filter shows messages from topics with unread.
   const unreadTopics = $derived(new Set($topics.filter(t => t.unread > 0).map(t => t.name)));
 
   const visible = $derived(
-    filter === 'all' ? items : items.filter(m => unreadTopics.has(m.topicName))
+    (filter === 'all' ? items : items.filter(m => unreadTopics.has(m.topicName)))
+      .filter(m => matchesCategory(m, selectedCategory))
   );
 
   // Group into 今天 / 昨天 / 更早, preserving order.
@@ -44,9 +49,6 @@
     $activeTopic = name;
   }
 
-  function markAllRead() {
-    for (const t of $topics) markRead(t.name);
-  }
 </script>
 
 <div class="page">
@@ -55,6 +57,12 @@
     <button class="chip" class:active={filter === 'unread'} onclick={() => filter = 'unread'}>
       未读{#if unreadCount > 0}&nbsp;{unreadCount}{/if}
     </button>
+    <select class="category-select" bind:value={selectedCategory} aria-label="按分类筛选">
+      <option value="">全部分类</option>
+      {#each categoryChoices as item}
+        <option value={item.path}>{'—'.repeat(item.depth - 1)} {item.path.split('/').at(-1)}</option>
+      {/each}
+    </select>
     <div class="spacer"></div>
     {#if unreadCount > 0}
       <button class="link-btn" onclick={markAllRead}>全部已读</button>
@@ -85,6 +93,9 @@
               {/if}
               <span class="msg-time">{fmtTime(msg.time)}</span>
             </div>
+            {#if msg.category?.length}
+              <div class="category-path">{msg.category.join(' › ')}</div>
+            {/if}
             {#if msg.title}
               <div class="msg-title">{msg.title}</div>
             {/if}
@@ -112,6 +123,11 @@
     background: var(--accent-dim); border-color: var(--accent);
     color: var(--accent-hover); font-weight: 600;
   }
+  .category-select {
+    max-width: 230px; padding: 5px 9px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--bg-2); color: var(--text-2);
+    font: inherit; font-size: 11px;
+  }
   .spacer { flex: 1; }
   .link-btn {
     border: none; background: transparent; color: var(--accent-hover);
@@ -129,6 +145,7 @@
   .msg-card {
     padding: 12px 16px; border-radius: var(--r-lg); background: var(--bg-2);
     border: 1px solid var(--border); transition: border-color 0.12s;
+    content-visibility: auto; contain-intrinsic-size: auto 72px;
   }
   .msg-card:hover { border-color: var(--border-strong); }
   .msg-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
@@ -142,6 +159,7 @@
   .msg-priority { font-size: 11px; font-weight: 600; }
   .msg-time { font-size: 11px; color: var(--text-3); margin-left: auto; }
   .msg-title { font-weight: 600; font-size: 14px; margin-bottom: 3px; color: var(--text-1); }
+  .category-path { font-size: 10px; color: var(--accent-hover); margin-bottom: 4px; }
   .msg-body {
     font-size: 14px; color: var(--text-2); line-height: 1.5;
     white-space: pre-wrap; word-break: break-word;

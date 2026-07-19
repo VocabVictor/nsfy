@@ -18,6 +18,7 @@
   let newName = $state('');
   let newToken = $state('');
   let showAdd = $state(false);
+  let addError = $state('');
   let editTokenUrl = $state<string | null>(null);
   let editTokenValue = $state('');
 
@@ -27,8 +28,12 @@
 
   function submitAdd() {
     if (!newUrl || !newName) return;
-    addServer(newUrl, newName, newToken.trim());
-    newUrl = ''; newName = ''; newToken = ''; showAdd = false;
+    try {
+      addServer(newUrl, newName, newToken.trim());
+      newUrl = ''; newName = ''; newToken = ''; addError = ''; showAdd = false;
+    } catch (error) {
+      addError = error instanceof Error ? error.message : '服务器地址无效';
+    }
   }
 
   function openTokenEditor(url: string, current: string | undefined) {
@@ -86,8 +91,9 @@
         if (e.key === 'Enter') submitAdd();
       }}>
         <input type="text" placeholder="服务器名称（如:家里 VPS）" bind:value={newName} use:focusOnMount />
-        <input type="text" placeholder="http://host:port" bind:value={newUrl} />
+        <input type="text" placeholder="https://host:port" bind:value={newUrl} />
         <input type="password" placeholder="访问令牌（可选，服务器开启鉴权时填写）" bind:value={newToken} />
+        {#if addError}<div class="form-error">{addError}</div>{/if}
         <button class="btn-primary" disabled={!newUrl || !newName} onclick={submitAdd}>添加</button>
       </div>
     {/if}
