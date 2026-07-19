@@ -82,7 +82,7 @@ async fn show_notification_popup(
         ),
     };
 
-    let popup = tauri::WebviewWindowBuilder::new(
+    let popup_builder = tauri::WebviewWindowBuilder::new(
         &app,
         "notification-popup",
         tauri::WebviewUrl::App("index.html?popup=1".into()),
@@ -90,16 +90,21 @@ async fn show_notification_popup(
     .title("信鸽通知")
     .inner_size(WIDTH, HEIGHT)
     .position(x, y)
-    .decorations(false)
-    .transparent(true)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .resizable(false)
-    .shadow(true)
-    .focused(false)
-    .visible(true)
-    .build()
-    .map_err(|e| e.to_string())?;
+    .decorations(false);
+    // macOS only exposes transparency through Tauri's private-API feature.
+    // Keep the popup opaque there instead of depending on private system APIs.
+    #[cfg(not(target_os = "macos"))]
+    let popup_builder = popup_builder.transparent(true);
+
+    let popup = popup_builder
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(true)
+        .focused(false)
+        .visible(true)
+        .build()
+        .map_err(|e| e.to_string())?;
 
     let popup_clone = popup.clone();
     tokio::spawn(async move {
