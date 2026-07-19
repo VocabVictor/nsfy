@@ -1,13 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::{
-    menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
-    AppHandle, Manager, WindowEvent,
-};
+use tauri::{AppHandle, Manager, WindowEvent};
 
 pub mod cli;
 pub mod config;
+pub mod tray;
 
 // --- App State ---
 
@@ -142,8 +139,10 @@ fn load_shared_config() -> Result<Option<config::StoredConfig>, String> {
 }
 
 #[tauri::command]
-fn save_shared_config(config: config::StoredConfig) -> Result<(), String> {
-    config::save(&config)
+fn save_shared_config(app: AppHandle, config: config::StoredConfig) -> Result<(), String> {
+    config::save(&config)?;
+    tray::apply_dnd(&app, config.do_not_disturb);
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -153,6 +152,7 @@ pub fn run() {
         .manage(AppState {
             pending_notification: Mutex::new(None),
         })
+        .manage(tray::TrayState::default())
         .invoke_handler(tauri::generate_handler![
             show_notification_popup,
             get_pending_notification,
@@ -167,26 +167,12 @@ pub fn run() {
                     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
                 };
 
-                let shortcut = Shortcut::new(
-                    Some(Modifiers::CONTROL | Modifiers::ALT),
-                    Code::KeyD,
-                );
+                let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyD);
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, _, event| {
                             if event.state() == ShortcutState::Released {
-                                if let Ok(mut settings) = config::load() {
-                                    settings.do_not_disturb = !settings.do_not_disturb;
-                                    if config::save(&settings).is_ok() {
-                                        if let Some(window) = app.get_webview_window("main") {
-                                            let script = format!(
-                                                "window.dispatchEvent(new CustomEvent('nsfy-dnd-changed',{{detail:{}}}))",
-                                                settings.do_not_disturb
-                                            );
-                                            let _ = window.eval(&script);
-                                        }
-                                    }
-                                }
+                                tray::toggle_dnd(app);
                             }
                         })
                         .build(),
@@ -194,39 +180,7 @@ pub fn run() {
                 let _ = app.global_shortcut().register(shortcut);
             }
 
-            let show_item = MenuItem::with_id(app, "show", "显示信鸽", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
-
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
-                .show_menu_on_left_click(false)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        button_state: tauri::tray::MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let app = tray.app_handle();
-                        if let Some(w) = app.get_webview_window("main") {
-                            let _ = w.show();
-                            let _ = w.set_focus();
-                        }
-                    }
-                })
-                .build(app)?;
+            tray::setup(app)?;
 
             // Closing the window hides it instead of quitting — nsfy keeps
             // listening for notifications in the background, same as any
