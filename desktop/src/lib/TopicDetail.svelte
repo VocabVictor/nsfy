@@ -130,7 +130,7 @@
 <style>
   .page {
     display: flex; flex-direction: column; height: 100%;
-    padding: 24px; max-width: 700px; margin: 0 auto; width: 100%;
+    padding: 24px; width: 100%;
   }
   .detail-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
   .category-select {

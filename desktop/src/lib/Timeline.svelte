@@ -163,7 +163,7 @@
 <style>
   .page {
     display: flex; flex-direction: column; height: 100%;
-    padding: 16px 24px 24px; max-width: 720px; margin: 0 auto; width: 100%;
+    padding: 16px 24px 24px; width: 100%;
   }
   .filter-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 14px; }
   .chip {
