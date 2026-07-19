@@ -1,6 +1,7 @@
 package com.nsfy.app.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -26,12 +27,20 @@ private val PRIORITY_OPTIONS = listOf(
 @Composable
 fun PublishScreen() {
     val context = LocalContext.current
-    var serverUrl by remember { mutableStateOf("https://") }
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE) }
+    val servers = remember {
+        val urls = prefs.getStringSet("servers", emptySet()).orEmpty()
+        if (urls.isEmpty()) listOf(ServerItem("http://localhost:8419", "Local"))
+        else urls.map { ServerItem(it, prefs.getString("server_name_$it", it) ?: it) }
+    }
+    var serverUrl by remember { mutableStateOf(servers.first().url) }
     var topicName by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var categoryPath by remember { mutableStateOf("") }
     var priority by remember { mutableIntStateOf(3) }
+    var popup by remember { mutableStateOf(false) }
+    var bypassDnd by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
     val client = remember { OkHttpClient() }
     val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -49,13 +58,14 @@ fun PublishScreen() {
             put("title", title)
             put("message", message)
             put("priority", priority)
+            put("popup", popup)
+            put("bypassDnd", bypassDnd)
             put("tags", org.json.JSONArray())
             put(
                 "category",
                 org.json.JSONArray(categoryPath.split('/').map { it.trim() }.filter { it.isNotEmpty() }),
             )
         }
-        val prefs = context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
         val request = com.nsfy.app.data.model.authenticated(
             Request.Builder().url("$normalized/$t"), normalized, prefs,
         ).post(body.toString().toRequestBody(jsonMediaType)).build()
@@ -70,6 +80,8 @@ fun PublishScreen() {
                     message = ""
                     title = ""
                     categoryPath = ""
+                    popup = false
+                    bypassDnd = false
                 }
             }
         })
@@ -93,14 +105,19 @@ fun PublishScreen() {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            OutlinedTextField(
-                value = serverUrl,
-                onValueChange = { serverUrl = it },
-                label = { Text("服务器地址") },
-                placeholder = { Text("https://your-server.example") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Text("服务器", style = MaterialTheme.typography.labelMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                servers.forEach { server ->
+                    FilterChip(
+                        selected = serverUrl == server.url,
+                        onClick = { serverUrl = server.url },
+                        label = { Text(server.name) },
+                    )
+                }
+            }
             OutlinedTextField(
                 value = topicName,
                 onValueChange = { topicName = it },
@@ -141,6 +158,23 @@ fun PublishScreen() {
                         onClick = { priority = value },
                         label = { Text(label) },
                     )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = popup,
+                        onCheckedChange = { popup = it; if (!it) bypassDnd = false },
+                    )
+                    Text("弹窗通知")
+                }
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = bypassDnd,
+                        onCheckedChange = { bypassDnd = it },
+                        enabled = popup,
+                    )
+                    Text("无视勿扰")
                 }
             }
             Button(

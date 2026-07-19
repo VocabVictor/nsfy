@@ -7,9 +7,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
-import com.nsfy.app.data.model.NsfyMessage
-import com.nsfy.app.data.model.normalizeServerUrl
-import com.nsfy.app.data.model.PublishRequest
+import com.nsfy.app.data.model.*
 import com.nsfy.app.data.repository.NsfyRepository
 import kotlinx.coroutines.*
 import com.nsfy.app.data.db.AppDatabase
@@ -123,16 +121,25 @@ class WebSocketService : Service() {
                         category = json.optJSONArray("category")?.let { arr ->
                             (0 until arr.length()).map { arr.getString(it) }
                         } ?: emptyList(),
+                        popup = if (json.has("popup")) json.optBoolean("popup")
+                            else json.optInt("priority", 3) >= 4,
+                        bypassDnd = json.optBoolean("bypassDnd", false),
                     )
                     scope.launch {
                         repository.saveMessage(serverUrl, topicName, msg)
                     }
-                    if (msg.priority >= 4) {
+                    val prefs = getSharedPreferences("nsfy_prefs", MODE_PRIVATE)
+                    val allowed = prefs.getStringSet(KEY_DND_PRIORITIES, emptySet())
+                        .orEmpty().mapNotNull(String::toIntOrNull).toSet()
+                    if (shouldPresentNotification(
+                            msg, prefs.getBoolean(KEY_DO_NOT_DISTURB, false), allowed,
+                        )) {
                         showNotification(
                             topicName,
                             msg.title.ifEmpty { msg.message },
                             msg.message,
                             msg.priority,
+                            NotificationMode.from(prefs.getString(KEY_NOTIFICATION_MODE, null)),
                         )
                     }
                 } catch (e: Exception) {
@@ -190,17 +197,21 @@ class WebSocketService : Service() {
         nm.notify(NOTIFICATION_ID, notification)
     }
 
-    private fun showNotification(topic: String, title: String, body: String, priority: Int) {
+    private fun showNotification(
+        topic: String, title: String, body: String, priority: Int, mode: NotificationMode,
+    ) {
+        if (mode == NotificationMode.Silent) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val channelId = if (priority >= 5) CHANNEL_URGENT else CHANNEL_DEFAULT
-        val n = NotificationCompat.Builder(this, channelId)
+        val headsUp = mode == NotificationMode.Temporary || mode == NotificationMode.Persistent
+        val channelId = if (headsUp || priority >= 5) CHANNEL_URGENT else CHANNEL_DEFAULT
+        val builder = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title.ifEmpty { topic })
             .setContentText(body)
-            .setPriority(if (priority >= 5) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(if (headsUp || priority >= 5) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
-            .build()
-        nm.notify(System.currentTimeMillis().toInt(), n)
+        if (mode == NotificationMode.Temporary) builder.setTimeoutAfter(5000)
+        nm.notify(System.currentTimeMillis().toInt(), builder.build())
     }
 
     private fun buildNotification(title: String, content: String): Notification {

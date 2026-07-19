@@ -119,6 +119,8 @@ internal class CliCommands(private val context: Context) {
             .put("title", intent.getStringExtra("title") ?: "")
             .put("message", message)
             .put("priority", priority)
+            .put("popup", intent.getBooleanExtra("popup", false))
+            .put("bypassDnd", intent.getBooleanExtra("bypassDnd", false))
             .put("tags", JSONArray(tags))
             .put("category", JSONArray(category))
         val request = authRequest("${server.url}/$topic", server, intent)

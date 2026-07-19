@@ -17,6 +17,8 @@ data class NsfyMessage(
     val priority: Int = 3,
     val tags: List<String> = emptyList(),
     val category: List<String> = emptyList(),
+    val popup: Boolean = false,
+    val bypassDnd: Boolean = false,
 )
 
 data class PublishRequest(
@@ -25,6 +27,8 @@ data class PublishRequest(
     val priority: Int = 3,
     val tags: List<String> = emptyList(),
     val category: List<String> = emptyList(),
+    val popup: Boolean = false,
+    val bypassDnd: Boolean = false,
 )
 
 data class ServerStats(
@@ -54,6 +58,8 @@ data class MessageEntity(
     val priority: Int,
     val tags: String,  // comma-separated
     val category: String = "[]",
+    val popup: Boolean = false,
+    val bypassDnd: Boolean = false,
 )
 
 // --- Server config ---

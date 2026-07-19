@@ -54,7 +54,7 @@ $env:NSFY_AUTH_TOKEN = "服务器令牌"
 & $cli topic-add -Server Tencent -Topic agents
 & $cli publish -Server Tencent -Topic agents -Title Codex `
   -Message "任务完成" -Priority 4 -Category "开发/Agent/Codex" `
-  -Tag hook,completed
+  -Tag hook,completed -Popup -BypassDnd
 & $cli poll -Server Tencent -Topic agents
 & $cli status -Server Tencent
 & $cli service-start

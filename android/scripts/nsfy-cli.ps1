@@ -16,6 +16,8 @@ param(
     [ValidateRange(1, 5)] [int]$Priority = 3,
     [string[]]$Tag = @(),
     [string]$Category,
+    [switch]$Popup,
+    [switch]$BypassDnd,
     [string]$Since,
     [string]$Token,
     [string]$Device
@@ -50,6 +52,11 @@ Add-Extra "message" $Message
 Add-Extra "priority" ([string]$Priority)
 Add-Extra "tags" ($Tag -join ",")
 Add-Extra "category" $Category
+if ($BypassDnd -and -not $Popup) {
+    throw "-BypassDnd 必须与 -Popup 一起使用"
+}
+if ($Popup) { $arguments += @("--ez", "popup", "true") }
+if ($BypassDnd) { $arguments += @("--ez", "bypassDnd", "true") }
 Add-Extra "since" $Since
 if (-not $Token) {
     $Token = $env:NSFY_AUTH_TOKEN

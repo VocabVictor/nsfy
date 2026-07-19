@@ -34,6 +34,8 @@ fun TopicDetailScreen(
     var replyText by remember { mutableStateOf("") }
     var replyTitle by remember { mutableStateOf("") }
     var replyCategory by remember { mutableStateOf("") }
+    var replyPopup by remember { mutableStateOf(false) }
+    var replyBypassDnd by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val client = remember { OkHttpClient() }
     val jsonMediaType = "application/json; charset=utf-8".toMediaType()
@@ -50,6 +52,8 @@ fun TopicDetailScreen(
             put("title", replyTitle)
             put("message", replyText)
             put("priority", 3)
+            put("popup", replyPopup)
+            put("bypassDnd", replyBypassDnd)
             put(
                 "category",
                 org.json.JSONArray(replyCategory.split('/').map { it.trim() }.filter { it.isNotEmpty() }),
@@ -66,6 +70,8 @@ fun TopicDetailScreen(
             override fun onResponse(call: Call, response: Response) {
                 replyText = ""
                 replyTitle = ""
+                replyPopup = false
+                replyBypassDnd = false
             }
         })
     }
@@ -113,6 +119,23 @@ fun TopicDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(modifier = Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = replyPopup,
+                                onCheckedChange = { replyPopup = it; if (!it) replyBypassDnd = false },
+                            )
+                            Text("弹窗通知", style = MaterialTheme.typography.labelSmall)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = replyBypassDnd,
+                                onCheckedChange = { replyBypassDnd = it },
+                                enabled = replyPopup,
+                            )
+                            Text("无视勿扰", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,

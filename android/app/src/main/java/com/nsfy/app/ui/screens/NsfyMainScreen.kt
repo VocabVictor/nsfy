@@ -75,7 +75,10 @@ private fun SplitShell(modifier: Modifier = Modifier, onLayoutChange: (String) -
                 Screen.Inbox -> TimelineScreen()
                 Screen.Topics -> TopicListScreen()
                 Screen.Publish -> PublishScreen()
-                Screen.Settings -> SettingsScreen(onLayoutChange = onLayoutChange)
+                Screen.Settings -> SettingsScreen(
+                    onLayoutChange = onLayoutChange,
+                    onSaved = { current = Screen.Inbox },
+                )
             }
         }
     }
@@ -112,7 +115,10 @@ private fun TimelineShell(modifier: Modifier = Modifier, onLayoutChange: (String
             when (current) {
                 TimelineTab.Timeline -> TimelineScreen()
                 TimelineTab.Subs -> TopicListScreen()
-                TimelineTab.Settings -> SettingsScreen(onLayoutChange = onLayoutChange)
+                TimelineTab.Settings -> SettingsScreen(
+                    onLayoutChange = onLayoutChange,
+                    onSaved = { current = TimelineTab.Timeline },
+                )
             }
         }
     }

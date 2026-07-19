@@ -1,5 +1,7 @@
 package com.nsfy.app.ui.screens
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -8,12 +10,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.nsfy.app.NsfyApp
 import com.nsfy.app.data.model.normalizeServerUrl
+import com.nsfy.app.data.model.*
 
 data class ServerItem(val url: String, val name: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
+fun SettingsScreen(onLayoutChange: (String) -> Unit = {}, onSaved: () -> Unit = {}) {
     val prefs = NsfyApp.instance.getSharedPreferences(
         PREFS_NAME, android.content.Context.MODE_PRIVATE
     )
@@ -28,6 +31,14 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
     var showAddDialog by remember { mutableStateOf(false) }
     var layoutMode by remember {
         mutableStateOf(prefs.getString(KEY_LAYOUT_MODE, "split") ?: "split")
+    }
+    var doNotDisturb by remember { mutableStateOf(prefs.getBoolean(KEY_DO_NOT_DISTURB, false)) }
+    var allowedPriorities by remember {
+        mutableStateOf(prefs.getStringSet(KEY_DND_PRIORITIES, emptySet()).orEmpty()
+            .mapNotNull { it.toIntOrNull() }.toSet())
+    }
+    var notificationMode by remember {
+        mutableStateOf(NotificationMode.from(prefs.getString(KEY_NOTIFICATION_MODE, null)))
     }
 
     Scaffold(
@@ -44,7 +55,8 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
@@ -56,18 +68,12 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = layoutMode == "split",
-                    onClick = {
-                        layoutMode = "split"
-                        onLayoutChange("split")
-                    },
+                    onClick = { layoutMode = "split" },
                     label = { Text("分栏排版") },
                 )
                 FilterChip(
                     selected = layoutMode == "timeline",
-                    onClick = {
-                        layoutMode = "timeline"
-                        onLayoutChange("timeline")
-                    },
+                    onClick = { layoutMode = "timeline" },
                     label = { Text("统一时间线") },
                 )
             }
@@ -132,6 +138,30 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}) {
             ) {
                 Text("＋ 添加服务器")
             }
+
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+            NotificationSettingsSection(
+                doNotDisturb = doNotDisturb,
+                onDoNotDisturbChange = { doNotDisturb = it },
+                allowedPriorities = allowedPriorities,
+                onAllowedPrioritiesChange = { allowedPriorities = it },
+                mode = notificationMode,
+                onModeChange = { notificationMode = it },
+            )
+
+            Button(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    prefs.edit()
+                        .putBoolean(KEY_DO_NOT_DISTURB, doNotDisturb)
+                        .putStringSet(KEY_DND_PRIORITIES, allowedPriorities.map(Int::toString).toSet())
+                        .putString(KEY_NOTIFICATION_MODE, notificationMode.value)
+                        .apply()
+                    onLayoutChange(layoutMode)
+                    onSaved()
+                },
+            ) { Text("保存设置") }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
