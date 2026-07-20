@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Permissions required by the nsfy desktop windows",
+  "windows": ["main", "notification-popup"],
+  "permissions": [
+    "core:default",
+    "notification:default",
+    "websocket:default"
+  ]
+}

@@ -18,6 +18,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -30,6 +31,7 @@ fun TopicDetailScreen(
     val repo = remember { NsfyRepository(db) }
     val topicId = NsfyRepository.topicId(topic.serverUrl, topic.name)
     val messages by repo.getMessages(topicId).collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
 
     var replyText by remember { mutableStateOf("") }
     var replyTitle by remember { mutableStateOf("") }
@@ -37,11 +39,15 @@ fun TopicDetailScreen(
     var replyPopup by remember { mutableStateOf(false) }
     var replyBypassDnd by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val client = remember { OkHttpClient() }
+    val prefs = remember { NsfyApp.instance.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE) }
+    val client = remember { nsfyHttpClient(prefs) }
     val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+
+    LaunchedEffect(topicId) { repo.markTopicRead(topicId) }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
+            repo.markTopicRead(topicId)
             listState.animateScrollToItem(0)
         }
     }
@@ -59,9 +65,6 @@ fun TopicDetailScreen(
                 org.json.JSONArray(replyCategory.split('/').map { it.trim() }.filter { it.isNotEmpty() }),
             )
         }
-        val prefs = NsfyApp.instance.getSharedPreferences(
-            PREFS_NAME, android.content.Context.MODE_PRIVATE
-        )
         val request = com.nsfy.app.data.model.authenticated(
             Request.Builder().url("${topic.serverUrl}/${topic.name}"), topic.serverUrl, prefs,
         ).post(body.toString().toRequestBody(jsonMediaType)).build()
@@ -94,6 +97,10 @@ fun TopicDetailScreen(
                     TextButton(onClick = onBack) {
                         Text("←", fontSize = MaterialTheme.typography.titleLarge.fontSize)
                     }
+                },
+                actions = {
+                    TextButton(onClick = { scope.launch { repo.markTopicRead(topicId) } }) { Text("全部已读") }
+                    TextButton(onClick = { scope.launch { repo.trashTopic(topicId) } }) { Text("清空") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,

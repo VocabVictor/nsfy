@@ -15,6 +15,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import com.nsfy.app.data.model.normalizeServerUrl
+import com.nsfy.app.data.model.nsfyHttpClient
 
 private val PRIORITY_OPTIONS = listOf(
     5 to "紧急",
@@ -42,7 +43,7 @@ fun PublishScreen() {
     var popup by remember { mutableStateOf(false) }
     var bypassDnd by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
-    val client = remember { OkHttpClient() }
+    val client = remember { nsfyHttpClient(prefs) }
     val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     fun publish() {

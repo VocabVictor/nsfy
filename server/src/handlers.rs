@@ -3,6 +3,7 @@ use crate::message::{Message, PublishRequest};
 use crate::pubsub::PubSub;
 use crate::security::{client_ip, ConnLimiter, ConnPermit, RateLimiter};
 use crate::store::Persistence;
+use crate::{state_store::StateStore, state_sync::StateHub};
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
@@ -30,6 +31,9 @@ pub struct AppState {
     pub trust_proxy: bool,
     pub persistence: Persistence,
     pub db_keep_per_topic: usize,
+    pub state_store: Arc<StateStore>,
+    pub state_hub: StateHub,
+    pub state_keep_per_topic: usize,
 }
 
 const MAX_TOPIC_LEN: usize = 128;

@@ -24,8 +24,8 @@ interface TopicDao {
     @Query("UPDATE topics SET lastMessageTime = :time, lastMessagePreview = :preview WHERE id = :topicId")
     suspend fun updateLastMessage(topicId: String, time: Long, preview: String)
 
-    @Query("UPDATE topics SET isConnected = :connected WHERE id = :topicId")
-    suspend fun setConnected(topicId: String, connected: Boolean)
+    @Query("UPDATE topics SET isConnected = :connected, lastConnectedAt = CASE WHEN :connected THEN :now ELSE lastConnectedAt END WHERE id = :topicId")
+    suspend fun setConnected(topicId: String, connected: Boolean, now: Long)
 
     @Query("DELETE FROM topics WHERE id = :topicId")
     suspend fun deleteTopic(topicId: String)

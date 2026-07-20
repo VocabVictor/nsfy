@@ -11,6 +11,9 @@ import androidx.compose.ui.unit.dp
 import com.nsfy.app.NsfyApp
 import com.nsfy.app.data.model.normalizeServerUrl
 import com.nsfy.app.data.model.*
+import com.nsfy.app.service.WebSocketService
+import android.content.Intent
+import android.os.Build
 
 data class ServerItem(val url: String, val name: String)
 
@@ -40,6 +43,7 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}, onSaved: () -> Unit = 
     var notificationMode by remember {
         mutableStateOf(NotificationMode.from(prefs.getString(KEY_NOTIFICATION_MODE, null)))
     }
+    var mobilePreferences by remember { mutableStateOf(loadMobilePreferences(prefs)) }
 
     Scaffold(
         topBar = {
@@ -150,6 +154,9 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}, onSaved: () -> Unit = 
                 onModeChange = { notificationMode = it },
             )
 
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            AndroidAdvancedSettings(mobilePreferences) { mobilePreferences = it }
+
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
@@ -158,6 +165,12 @@ fun SettingsScreen(onLayoutChange: (String) -> Unit = {}, onSaved: () -> Unit = 
                         .putStringSet(KEY_DND_PRIORITIES, allowedPriorities.map(Int::toString).toSet())
                         .putString(KEY_NOTIFICATION_MODE, notificationMode.value)
                         .apply()
+                    saveMobilePreferences(prefs, mobilePreferences)
+                    val service = Intent(NsfyApp.instance, WebSocketService::class.java)
+                    NsfyApp.instance.stopService(service)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        NsfyApp.instance.startForegroundService(service)
+                    } else NsfyApp.instance.startService(service)
                     onLayoutChange(layoutMode)
                     onSaved()
                 },

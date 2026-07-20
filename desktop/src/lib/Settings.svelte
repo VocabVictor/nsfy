@@ -1,9 +1,13 @@
 <script lang="ts">
+  import { invoke } from '@tauri-apps/api/core';
   import {
     servers, topics, addServer, removeServer, setServerToken,
-    dndAllowedPriorities, doNotDisturb, layoutMode, notificationMode, popupPosition, windowBehavior,
+    advancedPreferences, dndAllowedPriorities, doNotDisturb, layoutMode, notificationMode,
+    popupPosition, windowBehavior,
     savePreferences, type LayoutMode, type NotificationMode, type PopupPosition, type WindowBehavior,
+    type AdvancedPreferences,
   } from './stores/nsfy';
+  import AdvancedSettings from './AdvancedSettings.svelte';
   import NotificationSettings from './NotificationSettings.svelte';
 
   let { onsaved }: { onsaved?: () => void } = $props();
@@ -22,6 +26,8 @@
   let draftNotificationMode = $state<NotificationMode>('system');
   let draftPosition = $state<PopupPosition>('top-right');
   let dirty = $state(false);
+  let saveError = $state('');
+  let draftAdvanced = $state<AdvancedPreferences>({ ...$advancedPreferences });
 
   $effect(() => {
     if (dirty) return;
@@ -31,18 +37,32 @@
     draftDndPriorities = [...$dndAllowedPriorities];
     draftNotificationMode = $notificationMode;
     draftPosition = $popupPosition;
+    draftAdvanced = { ...$advancedPreferences, topicRules: { ...$advancedPreferences.topicRules } };
   });
 
   function changed() {
     dirty = true;
   }
 
-  function saveSettings() {
+  async function saveSettings() {
+    saveError = '';
+    try {
+      await invoke('apply_desktop_settings', {
+        autoStart: draftAdvanced.autoStart,
+        startMinimized: draftAdvanced.startMinimized,
+        dndShortcut: draftAdvanced.dndShortcut,
+        showShortcut: draftAdvanced.showShortcut,
+      });
+    } catch (error) {
+      saveError = String(error);
+      return;
+    }
     savePreferences({
       layoutMode: draftLayout, windowBehavior: draftWindow,
       doNotDisturb: draftDnd, notificationMode: draftNotificationMode,
       dndAllowedPriorities: draftDndPriorities,
       popupPosition: draftPosition,
+      advanced: draftAdvanced,
     });
     dirty = false;
     onsaved?.();
@@ -162,6 +182,8 @@
     onchange={changed}
   />
 
+  <AdvancedSettings bind:advanced={draftAdvanced} onchange={changed} />
+
   <div class="section">
     <h2>关于信鸽</h2>
     <div class="about">
@@ -171,6 +193,7 @@
   </div>
 
   <div class="save-bar">
+    {#if saveError}<span class="save-error">{saveError}</span>{/if}
     <button class="btn-primary" disabled={!dirty} onclick={saveSettings}>保存设置</button>
   </div>
 </div>
@@ -249,4 +272,5 @@
     align-items: center; gap: 10px; margin-top: auto; padding: 14px 0 24px;
     background: linear-gradient(transparent, var(--bg-1) 22%);
   }
+  .save-error { color: var(--danger); font-size: 11px; }
 </style>

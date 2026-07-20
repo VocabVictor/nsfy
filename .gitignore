@@ -1,5 +1,6 @@
 # Rust
 server/target/
+server/target-*/
 slints/target/
 .release-packages/
 .performance-results/
@@ -14,6 +15,7 @@ desktop/src-tauri/target/
 
 # Android
 android/.gradle/
+android/.kotlin/
 android/build/
 android/app/build/
 android/local.properties

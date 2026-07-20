@@ -19,11 +19,16 @@ pub fn setup(app: &mut App) -> tauri::Result<()> {
     let dnd_enabled = config::load()
         .map(|settings| settings.do_not_disturb)
         .unwrap_or(false);
+    let shortcut = config::load()
+        .map(|settings| {
+            crate::desktop_settings::DesktopPreferences::from_config(&settings).dnd_shortcut
+        })
+        .unwrap_or_else(|_| "Ctrl+Alt+D".into());
     let show_item = MenuItem::with_id(app, "show", "显示信鸽", true, None::<&str>)?;
     let dnd_item = CheckMenuItem::with_id(
         app,
         "dnd",
-        "勿扰模式（Ctrl+Alt+D）",
+        &format!("勿扰模式（{shortcut}）"),
         true,
         dnd_enabled,
         None::<&str>,
@@ -75,10 +80,15 @@ pub fn apply_dnd(app: &AppHandle, enabled: bool) {
     }
     if let Some(item) = app.state::<TrayState>().dnd_item.lock().unwrap().as_ref() {
         let _ = item.set_checked(enabled);
+        let shortcut = config::load()
+            .map(|settings| {
+                crate::desktop_settings::DesktopPreferences::from_config(&settings).dnd_shortcut
+            })
+            .unwrap_or_else(|_| "Ctrl+Alt+D".into());
         let text = if enabled {
-            "勿扰模式：已开启（Ctrl+Alt+D）"
+            format!("勿扰模式：已开启（{shortcut}）")
         } else {
-            "勿扰模式（Ctrl+Alt+D）"
+            format!("勿扰模式（{shortcut}）")
         };
         let _ = item.set_text(text);
     }
@@ -90,7 +100,7 @@ pub fn apply_dnd(app: &AppHandle, enabled: bool) {
     }
 }
 
-fn show_main_window(app: &AppHandle) {
+pub fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();

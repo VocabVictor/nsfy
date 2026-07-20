@@ -46,6 +46,7 @@ data class TopicEntity(
     val lastMessageTime: Long = 0,
     val lastMessagePreview: String = "",
     val isConnected: Boolean = false,
+    val lastConnectedAt: Long = 0,
 )
 
 @Entity(tableName = "messages")
@@ -60,6 +61,18 @@ data class MessageEntity(
     val category: String = "[]",
     val popup: Boolean = false,
     val bypassDnd: Boolean = false,
+    val read: Boolean = false,
+    val deletedAt: Long? = null,
+)
+
+@Entity(tableName = "message_states")
+data class MessageStateEntity(
+    @PrimaryKey val key: String,
+    val topicId: String,
+    val messageId: String,
+    val status: String,
+    val updatedAt: Long,
+    val pending: Boolean = false,
 )
 
 // --- Server config ---

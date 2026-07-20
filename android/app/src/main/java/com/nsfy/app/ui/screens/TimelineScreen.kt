@@ -19,6 +19,7 @@ import com.nsfy.app.data.model.priorityLabel
 import com.nsfy.app.data.repository.NsfyRepository
 import com.nsfy.app.ui.theme.priorityColor
 import com.nsfy.app.ui.theme.topicColor
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,6 +27,8 @@ fun TimelineScreen() {
     val db = NsfyApp.instance.database
     val repo = remember { NsfyRepository(db) }
     val rows by repo.getAllMessagesWithTopic().collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+    var showTrash by remember { mutableStateOf(false) }
 
     var filter by remember { mutableStateOf("all") }
     var selectedCategory by remember { mutableStateOf("") }
@@ -37,11 +40,9 @@ fun TimelineScreen() {
         }.distinct().sorted()
     }
 
-    // Messages from the last hour count as fresh for the 未读 chip; per-message
-    // read state is not tracked in the schema.
-    val fresh = rows.count { System.currentTimeMillis() / 1000 - it.msg.time < 3600 }
+    val fresh = rows.count { !it.msg.read }
     val visible = (if (filter == "all") rows
-        else rows.filter { System.currentTimeMillis() / 1000 - it.msg.time < 3600 })
+        else rows.filter { !it.msg.read })
         .filter { row ->
             if (selectedCategory.isEmpty()) true
             else {
@@ -63,6 +64,15 @@ fun TimelineScreen() {
         topBar = {
             TopAppBar(
                 title = { Text("信鸽", fontWeight = FontWeight.Bold) },
+                actions = {
+                    TextButton(onClick = { scope.launch { repo.markAllRead() } }, enabled = fresh > 0) {
+                        Text("全部已读")
+                    }
+                    TextButton(onClick = { showTrash = true }) { Text("回收站") }
+                    TextButton(onClick = { scope.launch { repo.trashAll() } }, enabled = rows.isNotEmpty()) {
+                        Text("清空")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
@@ -135,17 +145,22 @@ fun TimelineScreen() {
                             )
                         }
                         items(items, key = { it.msg.id }) { row ->
-                            TimelineCard(row)
+                            TimelineCard(
+                                row,
+                                onRead = { scope.launch { repo.markRead(row.msg) } },
+                                onTrash = { scope.launch { repo.trash(row.msg) } },
+                            )
                         }
                     }
                 }
             }
         }
     }
+    if (showTrash) TrashDialog(repo) { showTrash = false }
 }
 
 @Composable
-private fun TimelineCard(row: MessageWithTopic) {
+private fun TimelineCard(row: MessageWithTopic, onRead: () -> Unit, onTrash: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -169,6 +184,11 @@ private fun TimelineCard(row: MessageWithTopic) {
                     fontWeight = FontWeight.SemiBold,
                     color = topicColor(row.topicName),
                 )
+                if (!row.msg.read) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(modifier = Modifier.size(6.dp), shape = MaterialTheme.shapes.extraLarge,
+                        color = MaterialTheme.colorScheme.primary) {}
+                }
                 if (row.msg.priority >= 4) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
@@ -208,6 +228,10 @@ private fun TimelineCard(row: MessageWithTopic) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                if (!row.msg.read) TextButton(onClick = onRead) { Text("已读") }
+                TextButton(onClick = onTrash) { Text("回收站") }
+            }
         }
     }
 }

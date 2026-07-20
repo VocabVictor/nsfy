@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { authHeaders, servers, topics } from './stores/nsfy';
+  import { servers, topics } from './stores/nsfy';
+  import { postMessage } from './post-json';
 
   let { onclose }: { onclose?: () => void } = $props();
 
@@ -31,7 +32,7 @@
 
   async function post() {
     const t = topicName.trim() || 'default';
-    const body = JSON.stringify({
+    const body = {
       title: title.trim(),
       message: message.trim(),
       priority,
@@ -39,13 +40,8 @@
       category: categoryPath.split('/').map(s => s.trim()).filter(Boolean),
       popup,
       bypassDnd,
-    });
-    const res = await fetch(`${serverUrl}/${t}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders(serverUrl) },
-      body,
-    });
-    if (!res.ok) throw new Error(`server returned ${res.status}`);
+    };
+    await postMessage(serverUrl, t, body);
   }
 
   async function doPublish() {

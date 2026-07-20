@@ -5,6 +5,8 @@ import {
   dndAllowedPriorities,
   doNotDisturb,
   notificationMode,
+  defaultAdvancedPreferences,
+  isScheduledDnd,
   setDoNotDisturb,
   setPreferencePersistence,
   savePreferences,
@@ -39,9 +41,23 @@ test('saving a settings draft persists once', () => {
     layoutMode: 'timeline', windowBehavior: 'resident', doNotDisturb: false,
     dndAllowedPriorities: [4, 5],
     notificationMode: 'persistent', popupPosition: 'bottom-right',
+    advanced: defaultAdvancedPreferences,
   });
 
   assert.equal(saves, 1);
   assert.deepEqual(get(dndAllowedPriorities), [4, 5]);
   assert.equal(get(notificationMode), 'persistent');
+});
+
+test('scheduled do not disturb carries overnight ranges into the next day', () => {
+  const settings = {
+    ...defaultAdvancedPreferences,
+    dndScheduleEnabled: true,
+    dndStart: '22:00',
+    dndEnd: '08:00',
+    dndDays: [1],
+  };
+  assert.equal(isScheduledDnd(settings, new Date('2026-07-20T23:00:00')), true);
+  assert.equal(isScheduledDnd(settings, new Date('2026-07-21T01:00:00')), true);
+  assert.equal(isScheduledDnd(settings, new Date('2026-07-21T23:00:00')), false);
 });

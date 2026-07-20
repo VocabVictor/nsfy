@@ -23,6 +23,8 @@ pub struct StoredConfig {
     pub do_not_disturb: bool,
     #[serde(default)]
     pub dnd_allowed_priorities: Vec<u8>,
+    #[serde(default = "default_advanced")]
+    pub advanced: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +41,12 @@ pub struct StoredTopic {
     pub server: String,
     #[serde(default)]
     pub unread: u64,
+    #[serde(
+        rename = "lastConnectedAt",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_connected_at: Option<u64>,
 }
 
 impl Default for StoredConfig {
@@ -57,6 +65,7 @@ impl Default for StoredConfig {
             window_behavior: default_window_behavior(),
             do_not_disturb: false,
             dnd_allowed_priorities: Vec::new(),
+            advanced: default_advanced(),
         }
     }
 }
@@ -178,6 +187,15 @@ fn default_layout_mode() -> String {
 
 fn default_window_behavior() -> String {
     "resident".into()
+}
+
+fn default_advanced() -> serde_json::Value {
+    serde_json::json!({
+        "autoStart": false,
+        "startMinimized": true,
+        "dndShortcut": "Ctrl+Alt+D",
+        "showShortcut": "Ctrl+Alt+N"
+    })
 }
 
 fn format_path_error(path: &Path, error: std::io::Error) -> String {

@@ -119,3 +119,46 @@ fn poll_replay_latency() {
         &samples,
     );
 }
+
+#[test]
+#[ignore]
+fn message_state_batch_latency() {
+    let temp = tempfile::tempdir().unwrap();
+    let server = server(&temp.path().join("state.db"));
+    let client = Client::new();
+    server
+        .request(client.post(format!("{}/state-load", server.base_url)))
+        .json(&json!({ "message": "seed" }))
+        .send()
+        .unwrap()
+        .error_for_status()
+        .unwrap();
+    let updates: Vec<_> = (0..500)
+        .map(|index| json!({ "id": format!("message-{index}"), "status": "read" }))
+        .collect();
+    let count = scale(20, 200);
+    let mut samples = Vec::with_capacity(count);
+    let started = Instant::now();
+    for iteration in 0..count {
+        let status = if iteration % 2 == 0 { "trash" } else { "read" };
+        let mut batch = updates.clone();
+        for update in &mut batch {
+            update["status"] = json!(status);
+        }
+        let request_started = Instant::now();
+        server
+            .request(client.post(format!("{}/state-load/state", server.base_url)))
+            .json(&json!({ "updates": batch }))
+            .send()
+            .unwrap()
+            .error_for_status()
+            .unwrap();
+        samples.push(request_started.elapsed());
+    }
+    report(
+        "message-state-500-item-batch",
+        count,
+        started.elapsed(),
+        &samples,
+    );
+}

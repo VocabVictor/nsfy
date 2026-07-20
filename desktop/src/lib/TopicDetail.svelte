@@ -1,9 +1,10 @@
 <script lang="ts">
   import {
     topics, activeTopic,
-    markRead, clearTopicMessages, fmtTime, priorityColor, priorityLabel, authHeaders,
+    markRead, clearTopicMessages, fmtTime, priorityColor, priorityLabel,
     categoryOptions, matchesCategory,
   } from './stores/nsfy';
+  import { postMessage } from './post-json';
 
   const topic = $derived($topics.find(t => t.name === $activeTopic));
   const serverUrl = $derived(topic?.server || '');
@@ -33,17 +34,13 @@
   async function doPublish() {
     if (!newMsg.trim() || !serverUrl || !$activeTopic) return;
     try {
-      await fetch(`${serverUrl}/${$activeTopic}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders(serverUrl) },
-        body: JSON.stringify({
+      await postMessage(serverUrl, $activeTopic, {
           title: replyTitle,
           message: newMsg.trim(),
           priority: 3,
           category: replyCategory.split('/').map(s => s.trim()).filter(Boolean),
           popup: replyPopup,
           bypassDnd: replyBypassDnd,
-        }),
       });
       newMsg = '';
       replyTitle = '';

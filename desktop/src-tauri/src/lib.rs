@@ -4,6 +4,8 @@ use tauri::{AppHandle, Manager, WindowEvent};
 
 pub mod cli;
 pub mod config;
+pub mod desktop_settings;
+pub mod direct_http;
 pub mod tray;
 
 // --- App State ---
@@ -148,10 +150,63 @@ fn save_shared_config(app: AppHandle, config: config::StoredConfig) -> Result<()
     Ok(())
 }
 
+#[tauri::command]
+fn apply_desktop_settings(
+    app: AppHandle,
+    auto_start: bool,
+    start_minimized: bool,
+    dnd_shortcut: String,
+    show_shortcut: String,
+) -> Result<(), String> {
+    let preferences = desktop_settings::DesktopPreferences {
+        auto_start,
+        start_minimized,
+        dnd_shortcut,
+        show_shortcut,
+    };
+    desktop_settings::register_shortcuts(&app, &preferences)?;
+    desktop_settings::apply_autostart(&app, auto_start)
+}
+
+#[tauri::command]
+fn export_config(include_tokens: bool) -> Result<String, String> {
+    let mut config = config::load()?;
+    if !include_tokens {
+        for server in &mut config.servers {
+            server.token = None;
+        }
+    }
+    serde_json::to_string_pretty(&config).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn import_config(content: String) -> Result<config::StoredConfig, String> {
+    let config: config::StoredConfig =
+        serde_json::from_str(&content).map_err(|error| format!("配置文件格式错误：{error}"))?;
+    config::save(&config)?;
+    Ok(config)
+}
+
+#[tauri::command]
+fn reset_preferences() -> Result<(), String> {
+    let mut current = config::load()?;
+    let defaults = config::StoredConfig::default();
+    current.popup_on_notify = defaults.popup_on_notify;
+    current.notification_mode = defaults.notification_mode;
+    current.popup_position = defaults.popup_position;
+    current.layout_mode = defaults.layout_mode;
+    current.window_behavior = defaults.window_behavior;
+    current.do_not_disturb = defaults.do_not_disturb;
+    current.dnd_allowed_priorities = defaults.dnd_allowed_priorities;
+    current.advanced = defaults.advanced;
+    config::save(&current)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_websocket::init())
         .manage(AppState {
             pending_notification: Mutex::new(None),
         })
@@ -162,25 +217,39 @@ pub fn run() {
             focus_main_window,
             load_shared_config,
             save_shared_config,
+            apply_desktop_settings,
+            export_config,
+            import_config,
+            reset_preferences,
+            direct_http::post_state_direct,
+            direct_http::post_message_direct,
         ])
         .setup(|app| {
             #[cfg(desktop)]
             {
-                use tauri_plugin_global_shortcut::{
-                    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
-                };
-
-                let shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyD);
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
-                        .with_handler(move |app, _, event| {
-                            if event.state() == ShortcutState::Released {
-                                tray::toggle_dnd(app);
+                        .with_handler(move |app, shortcut, event| {
+                            if event.state()
+                                == tauri_plugin_global_shortcut::ShortcutState::Released
+                            {
+                                desktop_settings::handle_shortcut(app, shortcut);
                             }
                         })
                         .build(),
                 )?;
-                let _ = app.global_shortcut().register(shortcut);
+                app.handle().plugin(tauri_plugin_autostart::init(
+                    tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                    Some(vec!["--minimized"]),
+                ))?;
+                let config = config::load().unwrap_or_default();
+                let preferences = desktop_settings::DesktopPreferences::from_config(&config);
+                let _ = desktop_settings::register_shortcuts(app.handle(), &preferences);
+                if desktop_settings::should_start_hidden(&config) {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                    }
+                }
             }
 
             tray::setup(app)?;

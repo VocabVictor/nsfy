@@ -13,7 +13,6 @@ import kotlinx.coroutines.*
 import com.nsfy.app.data.db.AppDatabase
 import okhttp3.*
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 class WebSocketService : Service() {
 
@@ -24,15 +23,16 @@ class WebSocketService : Service() {
     private lateinit var repository: NsfyRepository
     private var servers: List<Pair<String, String>> = emptyList() // url -> name
     private var subscriptionJob: Job? = null
+    private var stateSyncJob: Job? = null
+    private lateinit var stateSync: StateSyncManager
 
     override fun onCreate() {
         super.onCreate()
         val db = com.nsfy.app.data.db.AppDatabase.getInstance(this)
         repository = NsfyRepository(db)
-        okHttp = OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS) // no read timeout for WS
-            .build()
+        val prefs = getSharedPreferences("nsfy_prefs", MODE_PRIVATE)
+        okHttp = nsfyHttpClient(prefs, websocket = true)
+        stateSync = StateSyncManager(this, okHttp, repository, scope)
         acquireWakeLock()
         createNotificationChannel()
     }
@@ -43,6 +43,14 @@ class WebSocketService : Service() {
         startForeground(NOTIFICATION_ID, notification)
 
         subscriptionJob?.cancel()
+        stateSyncJob?.cancel()
+        stateSyncJob = scope.launch {
+            repository.getPendingStates().collect { if (it.isNotEmpty()) stateSync.flushSoon() }
+        }
+        scope.launch {
+            val settings = loadMobilePreferences(getSharedPreferences("nsfy_prefs", MODE_PRIVATE))
+            repository.prune(settings.retentionDays, settings.trashRetentionDays)
+        }
         subscriptionJob = scope.launch {
             // Load servers and connect
             android.util.Log.i("nsfy", "WebSocketService: loading servers from prefs")
@@ -64,6 +72,7 @@ class WebSocketService : Service() {
                 connections.keys.filterNot { it in wanted }.forEach { key ->
                     connections.remove(key)?.close(1000, "topic unsubscribed")
                 }
+                stateSync.retain(wanted)
                 for (topic in topicList) {
                     val key = "${topic.serverUrl}/${topic.name}"
                     android.util.Log.i("nsfy", "WebSocketService: topic ${topic.name} @ ${topic.serverUrl}, connected=${connections.containsKey(key)}")
@@ -71,6 +80,7 @@ class WebSocketService : Service() {
                         android.util.Log.i("nsfy", "WebSocketService: connecting to ${topic.name}")
                         connectWs(topic.serverUrl, topic.name)
                     }
+                    stateSync.connect(topic.serverUrl, topic.name)
                 }
             }
         }
@@ -129,17 +139,22 @@ class WebSocketService : Service() {
                         repository.saveMessage(serverUrl, topicName, msg)
                     }
                     val prefs = getSharedPreferences("nsfy_prefs", MODE_PRIVATE)
+                    val settings = loadMobilePreferences(prefs)
+                    val rule = settings.topicRules[topicRuleKey(serverUrl, topicName)] ?: TopicRule()
                     val allowed = prefs.getStringSet(KEY_DND_PRIORITIES, emptySet())
                         .orEmpty().mapNotNull(String::toIntOrNull).toSet()
-                    if (shouldPresentNotification(
-                            msg, prefs.getBoolean(KEY_DO_NOT_DISTURB, false), allowed,
+                    val policy = msg.copy(bypassDnd = msg.bypassDnd || rule.bypassDnd)
+                    val permitted = rule.mode != "mute" && (rule.mode != "high" || msg.priority >= 4)
+                    if (permitted && shouldPresentNotification(
+                            policy, prefs.getBoolean(KEY_DO_NOT_DISTURB, false) || scheduledDnd(settings), allowed,
                         )) {
                         showNotification(
                             topicName,
                             msg.title.ifEmpty { msg.message },
-                            msg.message,
+                            if (settings.showPreview) msg.message else "有一条新消息",
                             msg.priority,
                             NotificationMode.from(prefs.getString(KEY_NOTIFICATION_MODE, null)),
+                            settings,
                         )
                     }
                 } catch (e: Exception) {
@@ -199,11 +214,17 @@ class WebSocketService : Service() {
 
     private fun showNotification(
         topic: String, title: String, body: String, priority: Int, mode: NotificationMode,
+        settings: MobilePreferences,
     ) {
         if (mode == NotificationMode.Silent) return
         val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val headsUp = mode == NotificationMode.Temporary || mode == NotificationMode.Persistent
-        val channelId = if (headsUp || priority >= 5) CHANNEL_URGENT else CHANNEL_DEFAULT
+        val channelId = when {
+            !settings.soundEnabled && (headsUp || priority >= 5) -> CHANNEL_SILENT_URGENT
+            !settings.soundEnabled -> CHANNEL_SILENT
+            priority >= 5 && settings.urgentSoundEnabled -> CHANNEL_URGENT
+            else -> CHANNEL_DEFAULT
+        }
         val builder = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title.ifEmpty { topic })
@@ -230,6 +251,12 @@ class WebSocketService : Service() {
             NotificationChannel(CHANNEL_SERVICE, "Service", NotificationManager.IMPORTANCE_LOW),
             NotificationChannel(CHANNEL_DEFAULT, "Notifications", NotificationManager.IMPORTANCE_DEFAULT),
             NotificationChannel(CHANNEL_URGENT, "Urgent", NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(CHANNEL_SILENT, "Silent", NotificationManager.IMPORTANCE_LOW).apply {
+                setSound(null, null)
+            },
+            NotificationChannel(CHANNEL_SILENT_URGENT, "Silent alerts", NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(null, null)
+            },
         ).forEach { nm.createNotificationChannel(it) }
     }
 
@@ -241,8 +268,10 @@ class WebSocketService : Service() {
 
     override fun onDestroy() {
         subscriptionJob?.cancel()
+        stateSyncJob?.cancel()
         connections.values.forEach { it.close(1000, "service stopped") }
         connections.clear()
+        stateSync.close()
         scope.cancel()
         if (::wakeLock.isInitialized && wakeLock.isHeld) {
             wakeLock.release()
@@ -255,5 +284,7 @@ class WebSocketService : Service() {
         private const val CHANNEL_SERVICE = "nsfy_service"
         private const val CHANNEL_DEFAULT = "nsfy_notifications"
         private const val CHANNEL_URGENT = "nsfy_urgent"
+        private const val CHANNEL_SILENT = "nsfy_silent"
+        private const val CHANNEL_SILENT_URGENT = "nsfy_silent_urgent"
     }
 }

@@ -39,3 +39,9 @@ export function emptyTrash() {
   rememberPurged(get(trash).map(trashRef));
   trash.set(emptyTrashState());
 }
+
+export function pruneTrashOlderThan(days: number) {
+  const cutoff = Date.now() - Math.max(1, days) * 86_400_000;
+  const expired = get(trash).filter(message => message.deletedAt < cutoff).map(trashRef);
+  if (expired.length) discardTrash(expired);
+}

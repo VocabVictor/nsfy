@@ -6,24 +6,20 @@ import android.os.Build
 import com.nsfy.app.data.db.AppDatabase
 import com.nsfy.app.data.model.authenticated
 import com.nsfy.app.data.model.normalizeServerUrl
+import com.nsfy.app.data.model.nsfyHttpClient
 import com.nsfy.app.data.repository.NsfyRepository
 import com.nsfy.app.service.WebSocketService
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.TimeUnit
 
 internal class CliCommands(private val context: Context) {
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val repository = NsfyRepository(AppDatabase.getInstance(context))
     private val topicDao = AppDatabase.getInstance(context).topicDao()
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
+    private val client = nsfyHttpClient(prefs)
 
     suspend fun execute(intent: Intent): String = when (required(intent, "command")) {
         "server-list" -> serverList()

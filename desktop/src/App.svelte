@@ -9,10 +9,13 @@
   import Timeline from './lib/Timeline.svelte';
   import MessageActions from './lib/MessageActions.svelte';
   import { handleIncomingNotification } from './lib/message-notifications';
+  import { connectStateSocket, queueStateUpdates } from './lib/stores/state-sync-client';
+  import { setStateSyncEmitter } from './lib/stores/state-events';
+  import { connectSocket, type SocketConnection } from './lib/socket-client';
   import {
     topics, servers, activeTopic, layoutMode,
-    loadState, addTopic, removeTopic, addMessage, setConnected,
-    topicColor, serverToken, normalizeServerUrl, setDoNotDisturb,
+    loadState, addTopic, removeTopic, addMessage, setConnected, markRead,
+    advancedPreferences, topicColor, serverToken, normalizeServerUrl, setDoNotDisturb,
   } from './lib/stores/nsfy';
 
   let ready = $state(false);
@@ -35,8 +38,11 @@
   }
 
   // --- WebSocket connections (top-level: alive regardless of view) ---
-  const sockets = new Map<string, WebSocket>();
+  const sockets = new Map<string, SocketConnection>();
+  const stateSockets = new Map<string, SocketConnection>();
   let notifyPermission = $state(false);
+
+  setStateSyncEmitter(queueStateUpdates);
 
   onMount(() => {
     const syncDnd = (event: Event) => setDoNotDisturb((event as CustomEvent<boolean>).detail);
@@ -51,54 +57,61 @@
     }
   })();
 
-  function connectTopic(server: string, name: string) {
+  async function connectTopicState(server: string, name: string) {
     const key = `${server}/${name}`;
+    if (stateSockets.has(key)) return;
+    const socket = await connectStateSocket(server, name, () => {
+      stateSockets.delete(key);
+      setTimeout(() => {
+        if (get(topics).some(t => t.server === server && t.name === name)) {
+          connectTopicState(server, name);
+        }
+      }, 5000);
+    });
+    stateSockets.set(key, socket);
+  }
+
+  async function connectTopic(server: string, name: string) {
+    const key = `${server}/${name}`;
+    connectTopicState(server, name);
     if (sockets.has(key)) return;
     try {
       let connectedAt = Date.now() / 1000;
       const base = normalizeServerUrl(server);
       const url = base.replace(/^http/, 'ws') + `/${name}/ws`;
-      const ws = new WebSocket(url);
-      ws.onopen = () => {
-        connectedAt = Date.now() / 1000;
-        const token = serverToken(server);
-        if (token) ws.send(JSON.stringify({ type: 'auth', token }));
-        setConnected(name, server, true);
-      };
-      ws.onclose = () => {
-        setConnected(name, server, false);
-        sockets.delete(key);
-        // Reconnect with 5s delay, as long as the topic is still subscribed.
-        setTimeout(() => {
-          if (get(topics).some(t => t.server === server && t.name === name)) {
-            connectTopic(server, name);
-          }
-        }, 5000);
-      };
-      ws.onerror = () => { setConnected(name, server, false); };
-      ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
+      const ws = await connectSocket(url, $advancedPreferences.proxyMode === 'direct', serverToken(server), {
+        open: () => { connectedAt = Date.now() / 1000; setConnected(name, server, true); },
+        close: () => {
+          setConnected(name, server, false); sockets.delete(key);
+          setTimeout(() => { if (get(topics).some(t => t.server === server && t.name === name)) void connectTopic(server, name); }, 5000);
+        },
+        error: () => setConnected(name, server, false),
+        message: text => { try {
+          const msg = JSON.parse(text);
           if (!Array.isArray(msg.category)) msg.category = [];
           if (typeof msg.popup !== 'boolean') msg.popup = msg.priority >= 4;
           if (typeof msg.bypassDnd !== 'boolean') msg.bypassDnd = false;
           addMessage(name, server, msg);
-          handleIncomingNotification(name, msg, notifyPermission, msg.time >= connectedAt - 2);
-        } catch {}
-      };
+          handleIncomingNotification(name, server, msg, notifyPermission, msg.time >= connectedAt - 2);
+        } catch {} },
+      });
       sockets.set(key, ws);
     } catch {}
   }
 
   function disconnectAll() {
     sockets.forEach(ws => ws.close());
+    stateSockets.forEach(ws => ws.close());
     sockets.clear();
+    stateSockets.clear();
   }
 
   function unsubscribe(server: string, name: string) {
     const key = `${server}/${name}`;
     sockets.get(key)?.close();
+    stateSockets.get(key)?.close();
     sockets.delete(key);
+    stateSockets.delete(key);
     removeTopic(server, name);
   }
 
@@ -132,7 +145,7 @@
     $activeTopic = name;
     showSettings = false;
     const t = $topics.find(t => t.name === name);
-    if (t) t.unread = 0;
+    if (t) markRead(t.name, t.server);
   }
 
   const totalUnread = $derived($topics.reduce((n, t) => n + t.unread, 0));

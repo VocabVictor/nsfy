@@ -194,6 +194,7 @@ fn run_topic(command: TopicCommand) -> Result<(), String> {
                     name: topic.clone(),
                     server: server.clone(),
                     unread: 0,
+                    last_connected_at: None,
                 });
                 config::save(&stored)?;
             }

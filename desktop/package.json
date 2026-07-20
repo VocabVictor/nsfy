@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-notification": "^2.3.3"
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-websocket": "^2.4.2"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5",

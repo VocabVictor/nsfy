@@ -4,6 +4,8 @@ mod handlers;
 mod message;
 mod pubsub;
 mod security;
+mod state_store;
+mod state_sync;
 mod store;
 mod ws;
 mod ws_auth;
@@ -115,6 +117,12 @@ async fn main() {
         std::process::exit(2);
     });
     let db_keep_per_topic = keep;
+    let state_store = Arc::new(state_store::StateStore::open(&cfg.db_path).unwrap_or_else(
+        |error| {
+            tracing::error!("failed to open message state store: {}", error);
+            std::process::exit(2);
+        },
+    ));
 
     let state = Arc::new(AppState {
         pubsub,
@@ -131,6 +139,9 @@ async fn main() {
         trust_proxy: cfg.trust_proxy,
         persistence,
         db_keep_per_topic,
+        state_store,
+        state_hub: state_sync::StateHub::new(),
+        state_keep_per_topic: keep.saturating_mul(2).max(500),
     });
 
     if cfg.stats_interval > 0 {
@@ -183,6 +194,8 @@ async fn main() {
         .route("/", get(handlers::index))
         .route("/{topic}", post(handlers::publish))
         .route("/{topic}/ws", get(ws::subscribe))
+        .route("/{topic}/state", post(state_sync::update))
+        .route("/{topic}/state/ws", get(state_sync::subscribe))
         .route("/{topic}/sse", get(handlers::sse_subscribe))
         .route("/{topic}/json", get(handlers::poll))
         .layer(middleware::from_fn_with_state(
