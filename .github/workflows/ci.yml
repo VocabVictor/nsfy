@@ -92,6 +92,45 @@ jobs:
         run: cargo check --locked --bins
         working-directory: desktop/src-tauri
 
+  cli:
+    name: CLI (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            executable: nsfy-cli
+            extension: ''
+          - os: macos-latest
+            platform: macos
+            executable: nsfy-cli
+            extension: ''
+          - os: windows-latest
+            platform: windows
+            executable: nsfy-cli.exe
+            extension: .exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release CLI
+        run: cargo build --release --locked --no-default-features --bin nsfy-cli
+        working-directory: desktop/src-tauri
+      - name: Stage CLI artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path .cli-artifacts -Force | Out-Null
+          $name = "nsfy-cli-${{ matrix.platform }}-${{ runner.arch }}${{ matrix.extension }}"
+          Copy-Item "desktop/src-tauri/target/release/${{ matrix.executable }}" ".cli-artifacts/$name"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: nsfy-cli-${{ matrix.platform }}-${{ runner.arch }}
+          path: .cli-artifacts/*
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 14
+
   android:
     name: Android tests
     runs-on: ubuntu-latest

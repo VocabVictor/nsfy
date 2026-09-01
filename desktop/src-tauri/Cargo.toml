@@ -7,23 +7,36 @@ default-run = "nsfy-desktop"
 [[bin]]
 name = "nsfy-desktop"
 path = "src/main.rs"
+required-features = ["desktop"]
 
 [[bin]]
 name = "nsfy-cli"
 path = "src/bin/nsfy-cli.rs"
 
+[features]
+default = ["desktop"]
+desktop = [
+    "dep:tauri-build",
+    "dep:tauri",
+    "dep:tauri-plugin-notification",
+    "dep:tauri-plugin-global-shortcut",
+    "dep:tauri-plugin-autostart",
+    "dep:tauri-plugin-websocket",
+    "dep:tokio",
+]
+
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2", features = [], optional = true }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-notification = "2"
-tauri-plugin-global-shortcut = "2"
-tauri-plugin-autostart = "2"
-tauri-plugin-websocket = "2"
+tauri = { version = "2", features = ["tray-icon"], optional = true }
+tauri-plugin-notification = { version = "2", optional = true }
+tauri-plugin-global-shortcut = { version = "2", optional = true }
+tauri-plugin-autostart = { version = "2", optional = true }
+tauri-plugin-websocket = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["time"] }
+tokio = { version = "1", features = ["time"], optional = true }
 clap = { version = "4", features = ["derive"] }
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 

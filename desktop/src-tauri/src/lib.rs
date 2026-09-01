@@ -1,15 +1,22 @@
+#[cfg(feature = "desktop")]
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "desktop")]
 use std::sync::Mutex;
+#[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, WindowEvent};
 
 pub mod cli;
 pub mod config;
+#[cfg(feature = "desktop")]
 pub mod desktop_settings;
+#[cfg(feature = "desktop")]
 pub mod direct_http;
+#[cfg(feature = "desktop")]
 pub mod tray;
 
 // --- App State ---
 
+#[cfg(feature = "desktop")]
 pub struct AppState {
     /// Set right before creating the notification popup window, and pulled
     /// once by that window's own frontend on mount — avoids any race with
@@ -17,6 +24,7 @@ pub struct AppState {
     pub pending_notification: Mutex<Option<Vec<PopupContent>>>,
 }
 
+#[cfg(feature = "desktop")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PopupContent {
     pub title: String,
@@ -31,6 +39,7 @@ pub struct PopupContent {
 /// at a corner (or center) of the screen listing the latest messages,
 /// optionally closing itself after a few seconds. Separate from the main window
 /// entirely, so it never requires bringing the whole app to the front.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 async fn show_notification_popup(
     app: AppHandle,
@@ -118,6 +127,7 @@ async fn show_notification_popup(
 }
 
 /// Pulled once by the popup window's own frontend right after it mounts.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn get_pending_notification(state: tauri::State<'_, AppState>) -> Option<Vec<PopupContent>> {
     state.pending_notification.lock().unwrap().take()
@@ -125,6 +135,7 @@ fn get_pending_notification(state: tauri::State<'_, AppState>) -> Option<Vec<Pop
 
 /// Clicking the banner should bring the real app window forward, not just
 /// dismiss the banner.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn focus_main_window(app: AppHandle) -> Result<(), String> {
     if let Some(w) = app.get_webview_window("main") {
@@ -138,11 +149,13 @@ fn focus_main_window(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn load_shared_config() -> Result<Option<config::StoredConfig>, String> {
     config::load_existing()
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn save_shared_config(app: AppHandle, config: config::StoredConfig) -> Result<(), String> {
     config::save(&config)?;
@@ -150,6 +163,7 @@ fn save_shared_config(app: AppHandle, config: config::StoredConfig) -> Result<()
     Ok(())
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn apply_desktop_settings(
     app: AppHandle,
@@ -168,6 +182,7 @@ fn apply_desktop_settings(
     desktop_settings::apply_autostart(&app, auto_start)
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn export_config(include_tokens: bool) -> Result<String, String> {
     let mut config = config::load()?;
@@ -179,6 +194,7 @@ fn export_config(include_tokens: bool) -> Result<String, String> {
     serde_json::to_string_pretty(&config).map_err(|error| error.to_string())
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn import_config(content: String) -> Result<config::StoredConfig, String> {
     let config: config::StoredConfig =
@@ -187,6 +203,7 @@ fn import_config(content: String) -> Result<config::StoredConfig, String> {
     Ok(config)
 }
 
+#[cfg(feature = "desktop")]
 #[tauri::command]
 fn reset_preferences() -> Result<(), String> {
     let mut current = config::load()?;
@@ -202,6 +219,7 @@ fn reset_preferences() -> Result<(), String> {
     config::save(&current)
 }
 
+#[cfg(feature = "desktop")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
